@@ -113,9 +113,9 @@
 |---|---|---|---|
 | Most common words by year | Horizontal bar chart | Word frequency | 10–20 most frequent words for selected year |
 | Word/phrase popularity over time | Multi-line chart | Year (2000–2024) | Frequency per 10,000 words |
-| Vocabulary diversity over time | Line chart | Year (2000–2024) | Average lexical diversity |
+| Vocabulary diversity over time | Line chart | Year (2000–2024) | Average lexical diversity (MTLD; higher = more varied vocabulary) |
 | Song word count over time | Multi-line chart | Year (2000–2024) | Average total and unique word counts |
-| Song length vs. vocabulary diversity | Scatter plot | Word count | Lexical diversity |
+| Song length vs. vocabulary diversity | Scatter plot | Word count | Lexical diversity (MTLD) |
 
 ### Themes in Genres
 
@@ -128,8 +128,8 @@
 
 | Chart | Type | X-axis | Y-axis |
 |---|---|---|---|
-| Vocabulary diversity by genre | Box plot | Genre | Lexical diversity |
-| Vocabulary diversity by genre over time | Multi-line chart | Year (2000–2024) | Average lexical diversity |
+| Vocabulary diversity by genre | Box plot | Genre | Lexical diversity (MTLD) |
+| Vocabulary diversity by genre over time | Multi-line chart | Year (2000–2024) | Average lexical diversity (MTLD) |
 
 ## Architecture
 

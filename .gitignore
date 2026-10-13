@@ -219,4 +219,8 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .venv/
-data/
+data/*
+!data/stopwords.txt
+!data/filler_words.txt
+!data/lyric_stopwords.txt
+building_blocks.py

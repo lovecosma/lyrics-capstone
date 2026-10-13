@@ -1,0 +1,22 @@
+# One word per line; lines starting with # are ignored
+ain't
+bout
+c'mon
+cause
+could
+dem
+em
+gon
+gonna
+gotta
+i'ma
+let's
+that's
+there's
+til
+us
+wanna
+what's
+would
+y'all
+ya
