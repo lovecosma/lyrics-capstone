@@ -15,12 +15,14 @@ create table chart (
 create table topic (
   topic_id serial primary key,
   "name" varchar(50) not null unique,
+  display_name varchar(50) not null unique,
   description varchar(200) not null
 );
 
 create table track (
   track_id serial primary key,
   title varchar(200) not null,
+  artist_name varchar(150) not null,
   lyrics text not null,
   danceability decimal(7, 6) null,
   energy decimal(7, 6) null,
@@ -34,7 +36,8 @@ create table track (
   "key" smallint null,
   "mode" smallint null,
   time_signature smallint null,
-  duration_ms int null
+  duration_ms int null,
+  unique (title, artist_name)
 );
 
 create table track_genre (

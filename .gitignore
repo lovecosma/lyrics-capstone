@@ -223,5 +223,6 @@ data/*
 !data/stopwords.txt
 !data/filler_words.txt
 !data/lyric_stopwords.txt
+!data/topics.csv
 planning/
 .env
