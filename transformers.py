@@ -24,7 +24,13 @@ class TrackMerger:
     )
     TITLE_SUFFIX_PATTERN = re.compile(r"\s*[(\[][^)\]]*[)\]]|\s+-\s+.*$")
     TRACK_SUFFIX_PATTERNS = (VERSION_SUFFIX_PATTERN, TITLE_SUFFIX_PATTERN)
-    REMIX_PATTERN = re.compile(r"\bremix\b", re.IGNORECASE)
+    ALTERNATE_VERSION_PATTERN = re.compile(
+        r"\b(?:remix|live|acoustic|unplugged|mix|instrumental|demo|sessions?|extended"
+        r"|orchestral|synthesis|dub|broadway)\b"
+        r"|12\""
+        r"|\b(?:rock|pop|country|spanish) version\b",
+        re.IGNORECASE,
+    )
     BILLBOARD_ROW_COLUMN = "billboard_row"
     TRACK_NAME_COLUMN = "track_name"
     ARTIST_NAME_COLUMN = "artist_name"
@@ -150,10 +156,17 @@ class TrackMerger:
         )
 
     def _is_matching_version(self, candidate_df):
-        return ~candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN].str.contains(
-            self.REMIX_PATTERN, na=False
+        # Only the Spotify suffix ("- Live", "(Acoustic)") marks a version, so "Live Your Life" still matches
+        spotify_version_suffixes = (
+            candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN]
+            .fillna("")
+            .str.findall(self.TITLE_SUFFIX_PATTERN)
+            .str.join(self.WORD_SEPARATOR)
+        )
+        return ~spotify_version_suffixes.str.contains(
+            self.ALTERNATE_VERSION_PATTERN
         ) | candidate_df[self.TRACK_NAME_COLUMN].str.contains(
-            self.REMIX_PATTERN, na=False
+            self.ALTERNATE_VERSION_PATTERN, na=False
         )
 
     def _select_best_matches(self, candidate_df):
@@ -187,6 +200,7 @@ class GenreTransformer:
             .to_frame(name="name")
         )
         genre_df["name"] = genre_df["name"].str.strip()
+        logger.info("Built %d genres", len(genre_df))
         return genre_df
 
 
@@ -200,6 +214,7 @@ class ChartTransformer:
             .to_frame(name="year")
         )
         chart_df["year"] = chart_df["year"].astype(int)
+        logger.info("Built %d charts", len(chart_df))
         return chart_df
 
 
@@ -236,6 +251,9 @@ class TrackTransformer:
             .astype(dict.fromkeys(self.INTEGER_COLUMNS, self.NULLABLE_INTEGER_DTYPE))
             .reset_index(drop=True)
         )
+        logger.info(
+            "Built %d unique tracks from %d chart rows", len(song_df), len(track_df)
+        )
         return song_df
 
 
@@ -251,6 +269,11 @@ class TrackGenreTransformer:
             db_genre_df, how="inner", left_on="genre", right_on="name"
         ).drop(columns=["genre", "name"])
         track_genre_df = track_genre_df[["track_id", "genre_id"]].drop_duplicates()
+        logger.info(
+            "Linked %d of %d tracks to a genre",
+            track_genre_df["track_id"].nunique(),
+            len(db_track_df),
+        )
         return track_genre_df
 
 
@@ -268,6 +291,12 @@ class ChartTrackTransformer:
         chart_track_df = chart_track_df[
             ["track_id", "chart_id", "rank"]
         ].drop_duplicates()
+        logger.info(
+            "Linked %d of %d tracks to %d chart entries",
+            chart_track_df["track_id"].nunique(),
+            len(db_track_df),
+            len(chart_track_df),
+        )
         return chart_track_df
 
 
@@ -276,4 +305,5 @@ class TopicsTransformer:
         topic_df = topic_df.drop_duplicates(subset=["name"]).dropna()[
             ["name", "display_name", "description"]
         ]
+        logger.info("Built %d topics", len(topic_df))
         return topic_df

@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from psycopg import sql
 
 from transformers import (
     ChartTrackTransformer,
@@ -20,8 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class Extractor:
-    def __init__(self, engine):
-        self._engine = engine
+    def __init__(self, connection):
+        self._connection = connection
 
     def extract_from_csv(self, file_path):
         logger.info("Extracting songs from CSV at %s", file_path)
@@ -31,8 +32,8 @@ class Extractor:
 
     def extract_from_db(self, table_name):
         logger.info("Extracting %s.%s from the database", LYRICS_SCHEMA, table_name)
-        sql = f"select * from {LYRICS_SCHEMA}.{table_name}"
-        df = pd.read_sql_query(sql, con=self._engine)
+        query = f"select * from {LYRICS_SCHEMA}.{table_name}"
+        df = pd.read_sql_query(query, con=self._connection)
         logger.info("Extracted %d rows from %s.%s", len(df), LYRICS_SCHEMA, table_name)
         return df
 
@@ -82,14 +83,14 @@ class BillboardExtractor(Extractor):
 
 
 class Loader:
-    def __init__(self, engine):
-        self._engine = engine
+    def __init__(self, connection):
+        self._connection = connection
 
     def load_to_db(self, df, table_name):
         logger.info("Loading %d rows into %s.%s", len(df), LYRICS_SCHEMA, table_name)
         result = df.to_sql(
             table_name,
-            self._engine,
+            self._connection,
             schema=LYRICS_SCHEMA,
             if_exists="append",
             index=False,
@@ -97,11 +98,27 @@ class Loader:
         logger.info("Loaded %s.%s", LYRICS_SCHEMA, table_name)
         return result
 
+    def copy_to_db(self, df, table_name):
+        logger.info("Copying %d rows into %s.%s", len(df), LYRICS_SCHEMA, table_name)
+        copy_statement = sql.SQL("copy {table} ({columns}) from stdin").format(
+            table=sql.Identifier(LYRICS_SCHEMA, table_name),
+            columns=sql.SQL(", ").join(map(sql.Identifier, df.columns)),
+        )
+        # NaN would load as numeric 'NaN' rather than null
+        rows = df.astype(object).where(df.notna(), None).itertuples(
+            index=False, name=None
+        )
+        driver_connection = self._connection.connection.driver_connection
+        with driver_connection.cursor() as cursor, cursor.copy(copy_statement) as copy:
+            for row in rows:
+                copy.write_row(row)
+        logger.info("Copied %s.%s", LYRICS_SCHEMA, table_name)
+
 
 class ETLProcessor:
-    def __init__(self, engine, billboard_directory_path, spotify_csv_path, topic_csv_path):
-        self._extractor = BillboardExtractor(engine)
-        self._loader = Loader(engine)
+    def __init__(self, connection, billboard_directory_path, spotify_csv_path, topic_csv_path):
+        self._extractor = BillboardExtractor(connection)
+        self._loader = Loader(connection)
         self._billboard_directory_path = billboard_directory_path
         self._spotify_csv_path = spotify_csv_path
         self._topic_csv_path = topic_csv_path
