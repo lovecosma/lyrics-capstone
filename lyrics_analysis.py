@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 
@@ -6,98 +7,52 @@ from lexicalrichness import LexicalRichness
 from nltk import FreqDist
 from nltk.tokenize import RegexpTokenizer
 from nltk.util import everygrams
+from typesafe_sdk import Choice, Noul, TypeSafeError
 
 logger = logging.getLogger(__name__)
 
 
-class LyricsAnalyzer:
-    ANALYSIS_VERSION = "v3"
-    MIN_NGRAM_SIZE = 1
-    MAX_NGRAM_SIZE = 3
-    NGRAM_SEPARATOR = " "
-    CHARACTER_NORMALIZATION = str.maketrans(
-        {"\u2019": "'", "\u2018": "'", "\u200b": None}
-    )
-    WORD_TOKENIZER = RegexpTokenizer(r"[^\W_]+(?:'[^\W_]+)*")
+class LyricsCleaner:
     SCRAPE_ARTIFACT_PATTERN = re.compile(
+        # 3 ContributorsHello Lyrics
         r"^\s*\d+ Contributors?.*?Lyrics"
+        # See Adele LiveGet tickets as low as $45
         r"|See .+? LiveGet tickets as low as \$\d+"
         r"|You might also like"
+        # 42Embed
         r"|Embed\s*$"
     )
+    SCRAPE_ARTIFACT_REPLACEMENT = "\n"
+    OPTIONAL_SPACE = r"[ \t]*"
+    REQUIRED_SPACE = r"[ \t]+"
     SECTION_NAME = r"(?:verse|chorus|hook|bridge|intro|outro|pre-chorus|refrain)"
+    # " 2"
+    SECTION_NUMBER = rf"(?:{OPTIONAL_SPACE}\d+)?"
+    # " 16X", " - 112 (Q", ": Drake"
+    BRACKETED_NOTE = rf"(?:{OPTIONAL_SPACE}(?:\d|x\d|[-:])[^\])}}\n]*)?"
+    # " x2", " 4x", " until end", " repeat"
+    REPEAT_NOTE = rf"(?:{REQUIRED_SPACE}(?:\d+x|x\d+|until end|repeat))?"
+    # {Chorus}, (Chorus 16X), [Hook - 112 (Q)
+    BRACKETED_SECTION_HEADER = (
+        rf"[\[({{]{OPTIONAL_SPACE}{SECTION_NAME}{BRACKETED_NOTE}[\])}}]?"
+    )
+    # -CHORUS-, -- Verse 2 --
+    DASHED_SECTION_HEADER = (
+        rf"-+{OPTIONAL_SPACE}{SECTION_NAME}{SECTION_NUMBER}{OPTIONAL_SPACE}-+"
+    )
+    # Verse 1:, Chorus x2, Chorus until end
+    BARE_SECTION_HEADER = (
+        rf"{SECTION_NAME}{SECTION_NUMBER}{OPTIONAL_SPACE}:?{REPEAT_NOTE}"
+    )
     SECTION_HEADER_PATTERN = re.compile(
-        r"^[ \t]*(?:"
-        # {Chorus}, (Chorus 16X), [Hook - 112 (Q)
-        rf"[\[({{][ \t]*{SECTION_NAME}(?:[ \t]*(?:\d|x\d|[-:])[^\])}}\n]*)?[\])}}]?"
-        # -CHORUS-
-        rf"|-+[ \t]*{SECTION_NAME}(?:[ \t]*\d+)?[ \t]*-+"
-        # Verse 1:, Chorus x2, Chorus until end
-        rf"|{SECTION_NAME}(?:[ \t]*\d+)?[ \t]*:?(?:[ \t]+(?:\d+x|x\d+|until end|repeat))?"
-        r")[ \t]*$",
+        rf"^{OPTIONAL_SPACE}"
+        rf"(?:{BRACKETED_SECTION_HEADER}|{DASHED_SECTION_HEADER}|{BARE_SECTION_HEADER})"
+        rf"{OPTIONAL_SPACE}$",
         re.IGNORECASE | re.MULTILINE,
     )
-    SCRAPE_ARTIFACT_REPLACEMENT = "\n"
     SECTION_HEADER_REPLACEMENT = ""
-    NON_CONTENT_WORD_PATHS = (
-        "data/stopwords.txt",
-        "data/lyric_stopwords.txt",
-        "data/filler_words.txt",
-    )
-    COMMENT_PREFIX = "#"
-    TRACK_ID_COLUMN = "track_id"
-    LYRICS_COLUMN = "lyrics"
-    WORD_COUNT_COLUMN = "word_count"
-    LYRICS_NGRAM_METRIC_COLUMNS = (
-        TRACK_ID_COLUMN,
-        "ngram",
-        "n",
-        "frequency",
-        "analysis_version",
-    )
 
-    def __init__(self):
-        self._non_content_words = frozenset().union(
-            *map(self._load_word_list, self.NON_CONTENT_WORD_PATHS)
-        )
-
-    def analyze(self, track_df):
-        logger.info("Analyzing lyrics for %d tracks", len(track_df))
-        lyrics_metrics = []
-        lyrics_ngram_metrics = []
-        for track_id, lyrics in zip(
-            track_df[self.TRACK_ID_COLUMN], track_df[self.LYRICS_COLUMN]
-        ):
-            lines = self._tokenize_lines(self._clean_lyrics(lyrics))
-            lyrics_metrics.append(self._compute_lyrics_metric(track_id, lines))
-            lyrics_ngram_metrics.extend(
-                self._compute_lyrics_ngram_metrics(track_id, lines)
-            )
-
-        lyrics_metric_df = pd.DataFrame(lyrics_metrics)
-        wordless_track_count = lyrics_metric_df[self.WORD_COUNT_COLUMN].eq(0).sum()
-        if wordless_track_count:
-            logger.warning(
-                "%d tracks have no words after cleaning lyrics", wordless_track_count
-            )
-        lyrics_ngram_metric_df = pd.DataFrame(
-            lyrics_ngram_metrics, columns=list(self.LYRICS_NGRAM_METRIC_COLUMNS)
-        )
-        logger.info(
-            "Computed %d lyrics metrics and %d n-gram metrics",
-            len(lyrics_metric_df),
-            len(lyrics_ngram_metric_df),
-        )
-        return lyrics_metric_df, lyrics_ngram_metric_df
-
-    def _load_word_list(self, path):
-        with open(path, encoding="utf-8") as word_list_file:
-            lines = (line.strip() for line in word_list_file)
-            return frozenset(
-                line for line in lines if line and not line.startswith(self.COMMENT_PREFIX)
-            )
-
-    def _clean_lyrics(self, lyrics):
+    def clean(self, lyrics):
         without_artifacts = self.SCRAPE_ARTIFACT_PATTERN.sub(
             self.SCRAPE_ARTIFACT_REPLACEMENT, lyrics
         )
@@ -105,38 +60,117 @@ class LyricsAnalyzer:
             self.SECTION_HEADER_REPLACEMENT, without_artifacts
         )
 
-    def _tokenize_lines(self, lyrics):
+
+class LyricsTokenizer:
+    CHARACTER_NORMALIZATION = str.maketrans(
+        {"\u2019": "'", "\u2018": "'", "\u200b": None}
+    )
+    # "don't stop, rock'n'roll_2am lovin' café!"
+    # -> don't, stop, rock'n'roll, 2am, lovin, café
+    WORD_TOKENIZER = RegexpTokenizer(r"[^\W_]+(?:'[^\W_]+)*")
+
+    def tokenize(self, lyrics):
         normalized = lyrics.translate(self.CHARACTER_NORMALIZATION).casefold()
         lines = (self.WORD_TOKENIZER.tokenize(line) for line in normalized.splitlines())
         return [line for line in lines if line]
 
-    def _is_content_gram(self, gram):
-        return not all(word in self._non_content_words for word in gram)
+
+class LyricsAnalyzer:
+    ANALYSIS_VERSION = "v3"
+    MIN_NGRAM_SIZE = 1
+    MAX_NGRAM_SIZE = 3
+    NGRAM_SEPARATOR = " "
+    TRACK_ID_COLUMN = "track_id"
+    LYRICS_COLUMN = "lyrics"
+    WORD_COUNT_COLUMN = "word_count"
+    UNIQUE_WORD_COUNT_COLUMN = "unique_word_count"
+    LEXICAL_DIVERSITY_COLUMN = "lexical_diversity"
+    AVERAGE_WORD_LENGTH_COLUMN = "average_word_length"
+    NGRAM_COLUMN = "ngram"
+    NGRAM_SIZE_COLUMN = "n"
+    FREQUENCY_COLUMN = "frequency"
+    ANALYSIS_VERSION_COLUMN = "analysis_version"
+    LYRICS_METRIC_COLUMNS = (
+        TRACK_ID_COLUMN,
+        WORD_COUNT_COLUMN,
+        UNIQUE_WORD_COUNT_COLUMN,
+        LEXICAL_DIVERSITY_COLUMN,
+        AVERAGE_WORD_LENGTH_COLUMN,
+        ANALYSIS_VERSION_COLUMN,
+    )
+    LYRICS_NGRAM_METRIC_COLUMNS = (
+        TRACK_ID_COLUMN,
+        NGRAM_COLUMN,
+        NGRAM_SIZE_COLUMN,
+        FREQUENCY_COLUMN,
+        ANALYSIS_VERSION_COLUMN,
+    )
+
+    def __init__(self, non_content_words):
+        self._cleaner = LyricsCleaner()
+        self._tokenizer = LyricsTokenizer()
+        self._non_content_words = frozenset(non_content_words)
+
+    def analyze(self, track_df):
+        logger.info("Analyzing lyrics for %d tracks", len(track_df))
+        lyrics_metrics, lyrics_ngram_metrics = self._compute_track_metrics(track_df)
+        lyrics_metric_df = pd.DataFrame(
+            lyrics_metrics, columns=list(self.LYRICS_METRIC_COLUMNS)
+        )
+        lyrics_ngram_metric_df = pd.DataFrame(
+            lyrics_ngram_metrics, columns=list(self.LYRICS_NGRAM_METRIC_COLUMNS)
+        )
+        self._warn_about_wordless_tracks(lyrics_metric_df)
+        logger.info(
+            "Computed %d lyrics metrics and %d n-gram metrics",
+            len(lyrics_metric_df),
+            len(lyrics_ngram_metric_df),
+        )
+        return lyrics_metric_df, lyrics_ngram_metric_df
+
+    def _compute_track_metrics(self, track_df):
+        lyrics_metrics = []
+        lyrics_ngram_metrics = []
+        for track_id, lyrics in zip(
+            track_df[self.TRACK_ID_COLUMN], track_df[self.LYRICS_COLUMN]
+        ):
+            lines = self._tokenize_lyrics(lyrics)
+            lyrics_metrics.append(self._compute_lyrics_metric(track_id, lines))
+            lyrics_ngram_metrics.extend(
+                self._compute_lyrics_ngram_metrics(track_id, lines)
+            )
+        return lyrics_metrics, lyrics_ngram_metrics
+
+    def _tokenize_lyrics(self, lyrics):
+        return self._tokenizer.tokenize(self._cleaner.clean(lyrics))
+
+    def _warn_about_wordless_tracks(self, lyrics_metric_df):
+        wordless_track_count = lyrics_metric_df[self.WORD_COUNT_COLUMN].eq(0).sum()
+        if wordless_track_count:
+            logger.warning(
+                "%d tracks have no words after cleaning lyrics", wordless_track_count
+            )
 
     def _compute_lyrics_metric(self, track_id, lines):
         words = [word for line in lines for word in line]
-        word_frequencies = FreqDist(words)
-        word_count = word_frequencies.N()
         return {
             self.TRACK_ID_COLUMN: track_id,
-            self.WORD_COUNT_COLUMN: word_count,
-            "unique_word_count": word_frequencies.B(),
-            "lexical_diversity": (
-                LexicalRichness(words, preprocessor=None, tokenizer=None).mtld()
-                if word_count
-                else None
-            ),
-            "average_word_length": (
-                sum(
-                    len(word) * frequency
-                    for word, frequency in word_frequencies.items()
-                )
-                / word_count
-                if word_count
-                else None
-            ),
-            "analysis_version": self.ANALYSIS_VERSION,
+            self.WORD_COUNT_COLUMN: len(words),
+            self.UNIQUE_WORD_COUNT_COLUMN: len(set(words)),
+            self.LEXICAL_DIVERSITY_COLUMN: self._compute_lexical_diversity(words),
+            self.AVERAGE_WORD_LENGTH_COLUMN: self._compute_average_word_length(words),
+            self.ANALYSIS_VERSION_COLUMN: self.ANALYSIS_VERSION,
         }
+
+    def _compute_lexical_diversity(self, words):
+        if not words:
+            return None
+        return LexicalRichness(words, preprocessor=None, tokenizer=None).mtld()
+
+    def _compute_average_word_length(self, words):
+        if not words:
+            return None
+        return sum(map(len, words)) / len(words)
 
     def _compute_lyrics_ngram_metrics(self, track_id, lines):
         ngram_frequencies = FreqDist(
@@ -145,13 +179,155 @@ class LyricsAnalyzer:
             for gram in everygrams(line, self.MIN_NGRAM_SIZE, self.MAX_NGRAM_SIZE)
         )
         return (
-            (
-                track_id,
-                self.NGRAM_SEPARATOR.join(gram),
-                len(gram),
-                frequency,
-                self.ANALYSIS_VERSION,
-            )
+            {
+                self.TRACK_ID_COLUMN: track_id,
+                self.NGRAM_COLUMN: self.NGRAM_SEPARATOR.join(gram),
+                self.NGRAM_SIZE_COLUMN: len(gram),
+                self.FREQUENCY_COLUMN: frequency,
+                self.ANALYSIS_VERSION_COLUMN: self.ANALYSIS_VERSION,
+            }
             for gram, frequency in ngram_frequencies.items()
             if self._is_content_gram(gram)
         )
+
+    def _is_content_gram(self, gram):
+        return not all(word in self._non_content_words for word in gram)
+
+
+class LyricsTopicAnalyzer:
+    ANALYSIS_VERSION = "v1"
+    MAX_CONCURRENT_REQUESTS = 8
+    OTHER_TOPIC = "other"
+    PRIMARY_TOPIC_QUESTION_ID = "primary_topic"
+    PRIMARY_TOPIC_INSTRUCTIONS = "What is the main theme of the lyrics in `song.lyrics`?"
+    TOPIC_PRESENCE_QUESTION = (
+        "Is `theme` a substantial theme of the lyrics in `song.lyrics`, "
+        "beyond a single passing line?"
+    )
+    TRACK_ID_COLUMN = "track_id"
+    TOPIC_ID_COLUMN = "topic_id"
+    TOPIC_NAME_COLUMN = "name"
+    TOPIC_DESCRIPTION_COLUMN = "description"
+    IS_PRIMARY_COLUMN = "is_primary"
+    PRIMARY_PROBABILITY_COLUMN = "primary_probability"
+    PRESENCE_PROBABILITY_COLUMN = "presence_probability"
+    MODEL_VERSION_COLUMN = "model_version"
+    ANALYSIS_VERSION_COLUMN = "analysis_version"
+    LYRICS_TOPIC_COLUMNS = (
+        TRACK_ID_COLUMN,
+        TOPIC_ID_COLUMN,
+        IS_PRIMARY_COLUMN,
+        PRIMARY_PROBABILITY_COLUMN,
+        PRESENCE_PROBABILITY_COLUMN,
+        MODEL_VERSION_COLUMN,
+        ANALYSIS_VERSION_COLUMN,
+    )
+
+    def __init__(self, topic_df, create_client):
+        self._create_client = create_client
+        self._cleaner = LyricsCleaner()
+        topic_names = topic_df[self.TOPIC_NAME_COLUMN]
+        self._topic_ids = dict(zip(topic_names, topic_df[self.TOPIC_ID_COLUMN]))
+        self._questions = self._build_questions(
+            dict(zip(topic_names, topic_df[self.TOPIC_DESCRIPTION_COLUMN]))
+        )
+
+    def select_uncategorized(self, track_df, lyrics_topic_df):
+        is_current_version = lyrics_topic_df[self.ANALYSIS_VERSION_COLUMN].eq(
+            self.ANALYSIS_VERSION
+        )
+        categorized_track_ids = lyrics_topic_df[self.TRACK_ID_COLUMN][is_current_version]
+        return track_df[~track_df[self.TRACK_ID_COLUMN].isin(categorized_track_ids)]
+
+    def analyze(self, track_df):
+        logger.info("Categorizing lyrics for %d tracks", len(track_df))
+        track_topic_rows = asyncio.run(self._classify_tracks(track_df))
+        lyrics_topic_df = pd.DataFrame(
+            [row for rows in track_topic_rows for row in rows],
+            columns=list(self.LYRICS_TOPIC_COLUMNS),
+        )
+        classified_track_count = lyrics_topic_df[self.TRACK_ID_COLUMN].nunique()
+        logger.info(
+            "Categorized %d of %d tracks", classified_track_count, len(track_df)
+        )
+        return lyrics_topic_df
+
+    def _build_questions(self, topic_descriptions):
+        primary_topic_question = Choice(
+            instructions=self.PRIMARY_TOPIC_INSTRUCTIONS, criteria=topic_descriptions
+        )
+        topic_presence_questions = {
+            topic: self._build_presence_question(description)
+            for topic, description in topic_descriptions.items()
+            if topic != self.OTHER_TOPIC
+        }
+        return {
+            self.PRIMARY_TOPIC_QUESTION_ID: primary_topic_question,
+            **topic_presence_questions,
+        }
+
+    def _build_presence_question(self, topic_description):
+        return Noul(
+            instructions={
+                "question": self.TOPIC_PRESENCE_QUESTION,
+                "theme": topic_description,
+            }
+        )
+
+    async def _classify_tracks(self, track_df):
+        semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
+        async with self._create_client() as client:
+            return await asyncio.gather(
+                *(
+                    self._classify_track(client, semaphore, track)
+                    for track in track_df.itertuples(index=False)
+                )
+            )
+
+    async def _classify_track(self, client, semaphore, track):
+        async with semaphore:
+            try:
+                response = await client.system_one(
+                    self._build_song_state(track), self._questions
+                )
+                return self._build_lyrics_topic_rows(track, response)
+            except (TypeSafeError, KeyError) as error:
+                logger.warning(
+                    "Topic classification failed for %s - %s (%s: %s)",
+                    track.title,
+                    track.artist_name,
+                    type(error).__name__,
+                    error,
+                )
+                return []
+
+    def _build_song_state(self, track):
+        return {
+            "song": {
+                "title": track.title,
+                "artist": track.artist_name,
+                "lyrics": self._cleaner.clean(track.lyrics),
+            }
+        }
+
+    def _build_lyrics_topic_rows(self, track, response):
+        primary_topic = response.choices[self.PRIMARY_TOPIC_QUESTION_ID]
+        return [
+            {
+                self.TRACK_ID_COLUMN: track.track_id,
+                self.TOPIC_ID_COLUMN: topic_id,
+                self.IS_PRIMARY_COLUMN: topic == primary_topic.choice,
+                self.PRIMARY_PROBABILITY_COLUMN: primary_topic.probabilities[topic],
+                self.PRESENCE_PROBABILITY_COLUMN: self._get_presence_probability(
+                    response, topic
+                ),
+                self.MODEL_VERSION_COLUMN: response.model,
+                self.ANALYSIS_VERSION_COLUMN: self.ANALYSIS_VERSION,
+            }
+            for topic, topic_id in self._topic_ids.items()
+        ]
+
+    def _get_presence_probability(self, response, topic):
+        if topic == self.OTHER_TOPIC:
+            return None
+        return response.nouls[topic].noul

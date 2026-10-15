@@ -21,6 +21,8 @@ logger = logging.getLogger(__name__)
 
 
 class Extractor:
+    COMMENT_PREFIX = "#"
+
     def __init__(self, connection):
         self._connection = connection
 
@@ -36,6 +38,18 @@ class Extractor:
         df = pd.read_sql_query(query, con=self._connection)
         logger.info("Extracted %d rows from %s.%s", len(df), LYRICS_SCHEMA, table_name)
         return df
+
+    def extract_word_list(self, file_path):
+        logger.info("Extracting word list from %s", file_path)
+        with open(file_path, encoding="utf-8") as word_list_file:
+            lines = (line.strip() for line in word_list_file)
+            words = frozenset(
+                line
+                for line in lines
+                if line and not line.startswith(self.COMMENT_PREFIX)
+            )
+        logger.info("Extracted %d words from %s", len(words), file_path)
+        return words
 
 
 class BillboardExtractor(Extractor):
@@ -104,9 +118,8 @@ class Loader:
             table=sql.Identifier(LYRICS_SCHEMA, table_name),
             columns=sql.SQL(", ").join(map(sql.Identifier, df.columns)),
         )
-        # NaN would load as numeric 'NaN' rather than null
-        rows = df.astype(object).where(df.notna(), None).itertuples(
-            index=False, name=None
+        rows = (
+            df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
         )
         driver_connection = self._connection.connection.driver_connection
         with driver_connection.cursor() as cursor, cursor.copy(copy_statement) as copy:
@@ -116,7 +129,9 @@ class Loader:
 
 
 class ETLProcessor:
-    def __init__(self, connection, billboard_directory_path, spotify_csv_path, topic_csv_path):
+    def __init__(
+        self, connection, billboard_directory_path, spotify_csv_path, topic_csv_path
+    ):
         self._extractor = BillboardExtractor(connection)
         self._loader = Loader(connection)
         self._billboard_directory_path = billboard_directory_path
@@ -152,7 +167,7 @@ class ETLProcessor:
         track_genre_df = TrackGenreTransformer().transform(
             db_track_df, db_genre_df, source_track_df
         )
-        
+
         chart_track_df = ChartTrackTransformer().transform(
             db_track_df, db_chart_df, source_track_df
         )

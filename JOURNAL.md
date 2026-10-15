@@ -99,11 +99,31 @@
     - Only checks the Spotify title's suffix (after " - " or in brackets), so "Live Your Life" still matches
     - 74 rows moved to the studio recording (Mr. Brightside went from an 8.8 min club mix to 3.7 min); 10 rows with only an alternate recording are now unmatched
   - Notice: Spotify liveness and instrumentalness are unreliable per song (Holiday reads as live, Can't Get You Out of My Head as instrumental)
+  - unicodedata - to strip accents, so Billboard and Spotify names match even when one has accents and the other doesn't
 
 ## Analysis Versions
   - v1: lexical diversity was unique ÷ total words, which drops as songs get longer
   - v2: switched lexical diversity to MTLD, removed scraping leftovers ("Contributors… Lyrics", ticket ads, "You might also like", "Embed"), and built 1–3 word n-grams within each line, dropping grams made only of stopwords
   - v3: also drops lines that are only a section header, e.g. "Verse 1:", "Chorus", "{Chorus}", "(Chorus 16X)", "-CHORUS-"
 
+## Implementing Topics Analysis
+- Uses Typesafe AI Jev SDK
+- primary_probability, presence_probability, and analysis_version added to track_topics 
+  - I'll want to keep track of main topics as well as partially covered topics
 
+## Refactoring
+- Add tests for service classes - minus transformers for now.
+- Split Lyrics Cleaning into its own service to be used between lyrics analyzer and lyrics topic analyzer
+- Split Lyrics Tokenizer into its own class
+
+## Planning for Airflow
+  - Planned DAG: run_etl -> analyze_lyrics -> plan_topic_batches -> analyze_topic batch
+
+## Initial Exploratory Analysis
+- Explicit lyrics nearly doubled. That happened within every genre, not just because hip-hop grew.
+- Lifestyle & Success (money, status) grew the most of any theme. Love & Relationships and Sex & Desire declined.
+- Love language is fading. Fewer songs use any "love" word, and they use them less often.
+- The club disappeared from lyrics, along with "girl" and "move".
+- Songs got shorter and sadder: about a minute shorter, lower valence and energy, more acoustic.
+- Songs use fewer words but repeat less.
 

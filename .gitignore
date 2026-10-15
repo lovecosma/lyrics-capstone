@@ -226,3 +226,4 @@ data/*
 !data/topics.csv
 planning/
 .env
+TRENDS.md

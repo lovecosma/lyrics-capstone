@@ -105,6 +105,9 @@ create table lyrics_topic (
       foreign key (topic_id)
       references topic(topic_id),
   is_primary boolean not null,
+  primary_probability decimal(7, 6) not null,
+  presence_probability decimal(7, 6) null,
   model_version varchar(50) not null,
-  primary key (track_id, topic_id)
+  analysis_version varchar(20) not null,
+  primary key (track_id, topic_id, analysis_version)
 );

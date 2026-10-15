@@ -14,7 +14,7 @@ class TrackMerger:
     WHITESPACE_PATTERN = re.compile(r"\s+")
     FEATURED_ARTIST_SEPARATOR = re.compile(r"\s+feat\.\s+", re.IGNORECASE)
     FEATURED_CREDIT_PATTERN = re.compile(
-        r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring)\s+(?P<artists>[^)\]]+)[)\]]",
+        r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+(?P<artists>[^)\]]+)[)\]]",
         re.IGNORECASE,
     )
     VERSION_SUFFIX_PATTERN = re.compile(
@@ -31,6 +31,7 @@ class TrackMerger:
         r"|\b(?:rock|pop|country|spanish) version\b",
         re.IGNORECASE,
     )
+    BILLBOARD_TO_SPOTIFY_ARTIST_NAMES = {"Pink": "P!nk"}
     BILLBOARD_ROW_COLUMN = "billboard_row"
     TRACK_NAME_COLUMN = "track_name"
     ARTIST_NAME_COLUMN = "artist_name"
@@ -52,7 +53,9 @@ class TrackMerger:
         f"{ARTIST_MATCH_NAME_COLUMN}{SPOTIFY_COLUMN_SUFFIX}"
     )
     SPOTIFY_YEAR_COLUMN = "year"
+    SPOTIFY_POPULARITY_COLUMN = "popularity"
     EXACT_ARTIST_MATCH_COLUMN = "is_exact_artist_match"
+    TITLE_SUFFIX_COLUMN = "has_title_suffix"
 
     def transform(self, billboard_df, spotify_df):
         logger.info(
@@ -123,6 +126,7 @@ class TrackMerger:
                     df[self.ARTIST_NAME_COLUMN]
                     .fillna("")
                     .map(self._get_primary_artist)
+                    .replace(self.BILLBOARD_TO_SPOTIFY_ARTIST_NAMES)
                     .map(self._normalize_name)
                 ),
             }
@@ -156,7 +160,6 @@ class TrackMerger:
         )
 
     def _is_matching_version(self, candidate_df):
-        # Only the Spotify suffix ("- Live", "(Acoustic)") marks a version, so "Live Your Life" still matches
         spotify_version_suffixes = (
             candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN]
             .fillna("")
@@ -169,6 +172,14 @@ class TrackMerger:
             self.ALTERNATE_VERSION_PATTERN, na=False
         )
 
+    def _has_title_suffix(self, candidate_df):
+        uncredited_names = (
+            candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN]
+            .fillna("")
+            .str.replace(self.FEATURED_CREDIT_PATTERN, "", regex=True)
+        )
+        return uncredited_names.str.contains(self.TITLE_SUFFIX_PATTERN)
+
     def _select_best_matches(self, candidate_df):
         is_exact_artist_match = self._match_artists(
             candidate_df, self._is_exact_artist_match
@@ -178,11 +189,19 @@ class TrackMerger:
         )
         return (
             candidate_df.assign(
-                **{self.EXACT_ARTIST_MATCH_COLUMN: is_exact_artist_match}
+                **{
+                    self.EXACT_ARTIST_MATCH_COLUMN: is_exact_artist_match,
+                    self.TITLE_SUFFIX_COLUMN: self._has_title_suffix(candidate_df),
+                }
             )[is_artist_match & self._is_matching_version(candidate_df)]
             .sort_values(
-                [self.EXACT_ARTIST_MATCH_COLUMN, self.SPOTIFY_YEAR_COLUMN],
-                ascending=[False, True],
+                [
+                    self.EXACT_ARTIST_MATCH_COLUMN,
+                    self.SPOTIFY_YEAR_COLUMN,
+                    self.TITLE_SUFFIX_COLUMN,
+                    self.SPOTIFY_POPULARITY_COLUMN,
+                ],
+                ascending=[False, True, True, False],
                 kind="stable",
             )
             .drop_duplicates(subset=self.BILLBOARD_ROW_COLUMN)
