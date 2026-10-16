@@ -1,34 +1,57 @@
+import csv
 import logging
 import re
 from pathlib import Path
 
 import pandas as pd
 from psycopg import sql
+from sqlalchemy import text
 
 from transformers import (
     ChartTrackTransformer,
     ChartTransformer,
-    GenreTransformer,
+    DroppedGVariantBuilder,
+    EconomicIndicatorTransformer,
+    EconomicObservationTransformer,
+    EmotionLexiconTransformer,
+    EmotionTransformer,
     TopicsTransformer,
-    TrackGenreTransformer,
     TrackMerger,
     TrackTransformer,
+    WordEmotionTransformer,
+    WordVadTransformer,
 )
 
 LYRICS_SCHEMA = "billboard_lyrics"
+TRACK_ID_COLUMN = "track_id"
+TRACK_TABLE = "track"
+GENRE_TABLE = "genre"
+TRACK_GENRE_TABLE = "track_genre"
+CHART_TABLE = "chart"
+CHART_TRACK_TABLE = "chart_track"
+TOPIC_TABLE = "topic"
+LYRICS_TOPIC_TABLE = "lyrics_topic"
+LYRICS_METRIC_TABLE = "lyrics_metric"
+LYRICS_NGRAM_METRIC_TABLE = "lyrics_ngram_metric"
+EMOTION_TABLE = "emotion"
+WORD_EMOTION_TABLE = "word_emotion"
+WORD_VAD_TABLE = "word_vad"
+ECONOMIC_INDICATOR_TABLE = "economic_indicator"
+ECONOMIC_OBSERVATION_TABLE = "economic_observation"
 
 logger = logging.getLogger(__name__)
 
 
 class Extractor:
     COMMENT_PREFIX = "#"
+    TRACK_IDS_PARAMETER = "track_ids"
 
     def __init__(self, connection):
         self._connection = connection
 
-    def extract_from_csv(self, file_path):
-        logger.info("Extracting songs from CSV at %s", file_path)
-        df = pd.read_csv(file_path)
+    def extract_from_csv(self, file_path, **read_csv_options) -> pd.DataFrame:
+        logger.info("Extracting rows from CSV at %s", file_path)
+        df = pd.read_csv(file_path, **read_csv_options)
         logger.info("Extracted %d rows from CSV", len(df))
         return df
 
@@ -38,6 +61,20 @@ class Extractor:
         df = pd.read_sql_query(query, con=self._connection)
         logger.info("Extracted %d rows from %s.%s", len(df), LYRICS_SCHEMA, table_name)
         return df
+
+    def extract_tracks(self, track_ids):
+        logger.info("Extracting %d tracks from the database", len(track_ids))
+        query = text(
+            f"select * from {LYRICS_SCHEMA}.{TRACK_TABLE}"
+            f" where {TRACK_ID_COLUMN} = any(:{self.TRACK_IDS_PARAMETER})"
+        )
+        track_df = pd.read_sql_query(
+            query,
+            con=self._connection,
+            params={self.TRACK_IDS_PARAMETER: list(track_ids)},
+        )
+        logger.info("Extracted %d tracks", len(track_df))
+        return track_df
 
     def extract_word_list(self, file_path):
         logger.info("Extracting word list from %s", file_path)
@@ -96,6 +133,55 @@ class BillboardExtractor(Extractor):
         return int(chart_year_match["chart_year"])
 
 
+class FredExtractor(Extractor):
+    SERIES_FILE_SUFFIX = ".csv"
+    DATE_COLUMN = EconomicObservationTransformer.OBSERVATION_DATE_COLUMN
+    CODE_COLUMN = EconomicObservationTransformer.CODE_COLUMN
+    VALUE_COLUMN = EconomicObservationTransformer.VALUE_COLUMN
+    # FRED marks a missing observation with "."
+    MISSING_VALUE = "."
+
+    def extract_series(self, directory_path, codes):
+        logger.info(
+            "Extracting %d FRED series from directory at %s", len(codes), directory_path
+        )
+        series_df = pd.concat(
+            [self._extract_one_series(directory_path, code) for code in codes],
+            ignore_index=True,
+        )
+        logger.info("Extracted %d FRED observations", len(series_df))
+        return series_df
+
+    def _extract_one_series(self, directory_path, code):
+        file_path = Path(directory_path) / f"{code}{self.SERIES_FILE_SUFFIX}"
+        return (
+            self.extract_from_csv(
+                file_path,
+                parse_dates=[self.DATE_COLUMN],
+                na_values=[self.MISSING_VALUE],
+            )
+            .rename(columns={code: self.VALUE_COLUMN})
+            .assign(**{self.CODE_COLUMN: code})
+        )
+
+
+class NrcLexiconExtractor(Extractor):
+    FIELD_SEPARATOR = "\t"
+    # Only empty fields are missing; words like "null" and "nan" are real entries
+    MISSING_VALUES = ("",)
+
+    def extract_lexicon(self, file_path, column_names):
+        return self.extract_from_csv(
+            file_path,
+            sep=self.FIELD_SEPARATOR,
+            header=None,
+            names=list(column_names),
+            quoting=csv.QUOTE_NONE,
+            keep_default_na=False,
+            na_values=list(self.MISSING_VALUES),
+        )
+
+
 class Loader:
     def __init__(self, connection):
         self._connection = connection
@@ -118,61 +204,146 @@ class Loader:
             table=sql.Identifier(LYRICS_SCHEMA, table_name),
             columns=sql.SQL(", ").join(map(sql.Identifier, df.columns)),
         )
-        rows = (
-            df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
-        )
-        driver_connection = self._connection.connection.driver_connection
+        driver_connection = self._driver_connection()
         with driver_connection.cursor() as cursor, cursor.copy(copy_statement) as copy:
-            for row in rows:
+            for row in self._to_rows(df):
                 copy.write_row(row)
         logger.info("Copied %s.%s", LYRICS_SCHEMA, table_name)
 
+    def update_db(self, df, table_name, key_column):
+        logger.info("Updating %d rows in %s.%s", len(df), LYRICS_SCHEMA, table_name)
+        value_columns = df.columns.drop(key_column)
+        update_statement = sql.SQL(
+            "update {table} set {assignments} where {key} = %s"
+        ).format(
+            table=sql.Identifier(LYRICS_SCHEMA, table_name),
+            assignments=sql.SQL(", ").join(
+                sql.SQL("{column} = %s").format(column=sql.Identifier(column))
+                for column in value_columns
+            ),
+            key=sql.Identifier(key_column),
+        )
+        with self._driver_connection().cursor() as cursor:
+            cursor.executemany(
+                update_statement, self._to_rows(df[[*value_columns, key_column]])
+            )
+        logger.info("Updated %s.%s", LYRICS_SCHEMA, table_name)
 
-class ETLProcessor:
-    def __init__(
-        self, connection, billboard_directory_path, spotify_csv_path, topic_csv_path
-    ):
-        self._extractor = BillboardExtractor(connection)
-        self._loader = Loader(connection)
+    def _driver_connection(self):
+        return self._connection.connection.driver_connection
+
+    def _to_rows(self, df):
+        return (
+            df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
+        )
+
+
+class TrackProcessor:
+    # The CSV's unnamed index and Spotify's own track id, which would clash with ours
+    SPOTIFY_ID_COLUMNS = ("Unnamed: 0", "track_id")
+
+    def __init__(self, extractor, loader, billboard_directory_path, spotify_csv_path):
+        self._extractor = extractor
+        self._loader = loader
         self._billboard_directory_path = billboard_directory_path
         self._spotify_csv_path = spotify_csv_path
-        self._topic_csv_path = topic_csv_path
 
-    def _extract(self):
+    def process(self):
+        logger.info("Starting track ETL")
         billboard_df = self._extractor.extract_from_directory(
             self._billboard_directory_path
         )
-        spotify_df = self._extractor.extract_from_csv(self._spotify_csv_path)
-        topic_df = self._extractor.extract_from_csv(self._topic_csv_path)
-        return billboard_df, spotify_df, topic_df
-
-    def process(self):
-        logger.info("Starting song ETL process")
-        billboard_df, spotify_df, topic_df = self._extract()
+        spotify_df = self._extractor.extract_from_csv(self._spotify_csv_path).drop(
+            columns=list(self.SPOTIFY_ID_COLUMNS)
+        )
         source_track_df = TrackMerger().transform(billboard_df, spotify_df)
-        genre_df = GenreTransformer().transform(source_track_df)
-        chart_df = ChartTransformer().transform(source_track_df)
-        track_df = TrackTransformer().transform(source_track_df)
-        topic_df = TopicsTransformer().transform(topic_df)
 
-        self._loader.load_to_db(genre_df, "genre")
-        self._loader.load_to_db(chart_df, "chart")
-        self._loader.load_to_db(topic_df, "topic")
-        self._loader.load_to_db(track_df, "track")
-
-        db_track_df = self._extractor.extract_from_db("track")
-        db_genre_df = self._extractor.extract_from_db("genre")
-        db_chart_df = self._extractor.extract_from_db("chart")
-
-        track_genre_df = TrackGenreTransformer().transform(
-            db_track_df, db_genre_df, source_track_df
+        self._loader.load_to_db(
+            ChartTransformer().transform(source_track_df), CHART_TABLE
+        )
+        self._loader.load_to_db(
+            TrackTransformer().transform(source_track_df), TRACK_TABLE
         )
 
         chart_track_df = ChartTrackTransformer().transform(
-            db_track_df, db_chart_df, source_track_df
+            self._extractor.extract_from_db(TRACK_TABLE),
+            self._extractor.extract_from_db(CHART_TABLE),
+            source_track_df,
+        )
+        self._loader.load_to_db(chart_track_df, CHART_TRACK_TABLE)
+        logger.info("Completed track ETL")
+
+
+class TopicProcessor:
+    def __init__(self, extractor, loader, topic_csv_path):
+        self._extractor = extractor
+        self._loader = loader
+        self._topic_csv_path = topic_csv_path
+
+    def process(self):
+        logger.info("Starting topic ETL")
+        topic_df = self._extractor.extract_from_csv(self._topic_csv_path)
+        self._loader.load_to_db(TopicsTransformer().transform(topic_df), TOPIC_TABLE)
+        logger.info("Completed topic ETL")
+
+
+class EmotionLexiconProcessor:
+    def __init__(self, extractor, loader, emotion_lexicon_path, vad_lexicon_path):
+        self._extractor = extractor
+        self._loader = loader
+        self._emotion_lexicon_path = emotion_lexicon_path
+        self._vad_lexicon_path = vad_lexicon_path
+
+    def process(self):
+        logger.info("Starting emotion lexicon ETL")
+        lexicon_df = self._extractor.extract_lexicon(
+            self._emotion_lexicon_path, EmotionLexiconTransformer.LEXICON_COLUMNS
+        )
+        vad_df = self._extractor.extract_lexicon(
+            self._vad_lexicon_path, WordVadTransformer.LEXICON_COLUMNS
+        )
+        variant_builder = DroppedGVariantBuilder()
+        word_emotion_df = EmotionLexiconTransformer(variant_builder).transform(
+            lexicon_df
         )
 
-        self._loader.load_to_db(track_genre_df, "track_genre")
-        self._loader.load_to_db(chart_track_df, "chart_track")
+        self._loader.load_to_db(
+            EmotionTransformer().transform(word_emotion_df), EMOTION_TABLE
+        )
+        self._loader.load_to_db(
+            WordVadTransformer(variant_builder).transform(vad_df), WORD_VAD_TABLE
+        )
 
-        logger.info("Completed song ETL process")
+        word_emotion_df = WordEmotionTransformer().transform(
+            self._extractor.extract_from_db(EMOTION_TABLE), word_emotion_df
+        )
+        self._loader.load_to_db(word_emotion_df, WORD_EMOTION_TABLE)
+        logger.info("Completed emotion lexicon ETL")
+
+
+class EconomicIndicatorProcessor:
+    def __init__(
+        self, extractor, loader, economic_indicator_csv_path, fred_directory_path
+    ):
+        self._extractor = extractor
+        self._loader = loader
+        self._economic_indicator_csv_path = economic_indicator_csv_path
+        self._fred_directory_path = fred_directory_path
+
+    def process(self):
+        logger.info("Starting economic indicator ETL")
+        indicator_df = EconomicIndicatorTransformer().transform(
+            self._extractor.extract_from_csv(self._economic_indicator_csv_path)
+        )
+        observation_df = self._extractor.extract_series(
+            self._fred_directory_path,
+            indicator_df[EconomicIndicatorTransformer.KEY_COLUMN].tolist(),
+        )
+
+        self._loader.load_to_db(indicator_df, ECONOMIC_INDICATOR_TABLE)
+
+        observation_df = EconomicObservationTransformer().transform(
+            self._extractor.extract_from_db(ECONOMIC_INDICATOR_TABLE), observation_df
+        )
+        self._loader.load_to_db(observation_df, ECONOMIC_OBSERVATION_TABLE)
+        logger.info("Completed economic indicator ETL")

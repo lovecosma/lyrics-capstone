@@ -9,6 +9,13 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.util import everygrams
 from typesafe_sdk import Choice, Noul, TypeSafeError
 
+from etl import (
+    LYRICS_METRIC_TABLE,
+    LYRICS_NGRAM_METRIC_TABLE,
+    LYRICS_TOPIC_TABLE,
+    TRACK_TABLE,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,6 +118,13 @@ class LyricsAnalyzer:
         self._tokenizer = LyricsTokenizer()
         self._non_content_words = frozenset(non_content_words)
 
+    def select_unanalyzed(self, track_df, lyrics_metric_df):
+        is_current_version = lyrics_metric_df[self.ANALYSIS_VERSION_COLUMN].eq(
+            self.ANALYSIS_VERSION
+        )
+        analyzed_track_ids = lyrics_metric_df[self.TRACK_ID_COLUMN][is_current_version]
+        return track_df[~track_df[self.TRACK_ID_COLUMN].isin(analyzed_track_ids)]
+
     def analyze(self, track_df):
         logger.info("Analyzing lyrics for %d tracks", len(track_df))
         lyrics_metrics, lyrics_ngram_metrics = self._compute_track_metrics(track_df)
@@ -199,7 +213,9 @@ class LyricsTopicAnalyzer:
     MAX_CONCURRENT_REQUESTS = 8
     OTHER_TOPIC = "other"
     PRIMARY_TOPIC_QUESTION_ID = "primary_topic"
-    PRIMARY_TOPIC_INSTRUCTIONS = "What is the main theme of the lyrics in `song.lyrics`?"
+    PRIMARY_TOPIC_INSTRUCTIONS = (
+        "What is the main theme of the lyrics in `song.lyrics`?"
+    )
     TOPIC_PRESENCE_QUESTION = (
         "Is `theme` a substantial theme of the lyrics in `song.lyrics`, "
         "beyond a single passing line?"
@@ -236,7 +252,9 @@ class LyricsTopicAnalyzer:
         is_current_version = lyrics_topic_df[self.ANALYSIS_VERSION_COLUMN].eq(
             self.ANALYSIS_VERSION
         )
-        categorized_track_ids = lyrics_topic_df[self.TRACK_ID_COLUMN][is_current_version]
+        categorized_track_ids = lyrics_topic_df[self.TRACK_ID_COLUMN][
+            is_current_version
+        ]
         return track_df[~track_df[self.TRACK_ID_COLUMN].isin(categorized_track_ids)]
 
     def analyze(self, track_df):
@@ -331,3 +349,55 @@ class LyricsTopicAnalyzer:
         if topic == self.OTHER_TOPIC:
             return None
         return response.nouls[topic].noul
+
+
+class LyricsAnalysisProcessor:
+    def __init__(self, extractor, loader, analyzer):
+        self._extractor = extractor
+        self._loader = loader
+        self._analyzer = analyzer
+
+    def select_pending(self):
+        track_df = self._extractor.extract_from_db(TRACK_TABLE)
+        unanalyzed_track_df = self._analyzer.select_unanalyzed(
+            track_df, self._extractor.extract_from_db(LYRICS_METRIC_TABLE)
+        )
+        logger.info(
+            "%d of %d tracks need lyrics analysis",
+            len(unanalyzed_track_df),
+            len(track_df),
+        )
+        return unanalyzed_track_df
+
+    def compute_batch(self, track_batch_df):
+        return self._analyzer.analyze(track_batch_df)
+
+    def load_batch(self, batch_result):
+        lyrics_metric_df, lyrics_ngram_metric_df = batch_result
+        self._loader.copy_to_db(lyrics_metric_df, LYRICS_METRIC_TABLE)
+        self._loader.copy_to_db(lyrics_ngram_metric_df, LYRICS_NGRAM_METRIC_TABLE)
+
+
+class LyricsTopicProcessor:
+    def __init__(self, extractor, loader, analyzer):
+        self._extractor = extractor
+        self._loader = loader
+        self._analyzer = analyzer
+
+    def select_pending(self):
+        track_df = self._extractor.extract_from_db(TRACK_TABLE)
+        uncategorized_track_df = self._analyzer.select_uncategorized(
+            track_df, self._extractor.extract_from_db(LYRICS_TOPIC_TABLE)
+        )
+        logger.info(
+            "%d of %d tracks need lyrics categorization",
+            len(uncategorized_track_df),
+            len(track_df),
+        )
+        return uncategorized_track_df
+
+    def compute_batch(self, track_batch_df):
+        return self._analyzer.analyze(track_batch_df)
+
+    def load_batch(self, batch_result):
+        self._loader.copy_to_db(batch_result, LYRICS_TOPIC_TABLE)

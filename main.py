@@ -5,20 +5,45 @@ from dynaconf import Dynaconf
 from sqlalchemy import create_engine
 from typesafe_sdk import AsyncTypeSafeClient
 
-from etl import ETLProcessor, Extractor, Loader
-from lyrics_analysis import LyricsAnalyzer, LyricsTopicAnalyzer
+from etl import (
+    TOPIC_TABLE,
+    TRACK_ID_COLUMN,
+    BillboardExtractor,
+    EconomicIndicatorProcessor,
+    EmotionLexiconProcessor,
+    Extractor,
+    FredExtractor,
+    Loader,
+    NrcLexiconExtractor,
+    TopicProcessor,
+    TrackProcessor,
+)
+from genre_enrichment import GenreEnrichmentProcessor, TrackGenreEnricher
+from itunes import ITunesClient
+from lyrics_analysis import (
+    LyricsAnalysisProcessor,
+    LyricsAnalyzer,
+    LyricsTopicAnalyzer,
+    LyricsTopicProcessor,
+)
 
 os.chdir(os.path.dirname(__file__))
 
 BILLBOARD_PATH = "data/billboard-hot100-lyrics-main"
 SPOTIFY_PATH = "data/spotify_tracks.csv"
 TOPIC_PATH = "data/topics.csv"
+EMOTION_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/emotion-lexicon.txt"
+VAD_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/vad-lexicon.txt"
+ECONOMIC_INDICATOR_PATH = "data/economic_indicators.csv"
+FRED_PATH = "data/fred"
 NON_CONTENT_WORD_PATHS = (
     "data/stopwords.txt",
     "data/lyric_stopwords.txt",
     "data/filler_words.txt",
 )
 LYRICS_ANALYSIS_BATCH_SIZE = 500
+# About 2.5 minutes of iTunes requests per committed batch
+GENRE_SEARCH_BATCH_SIZE = 50
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 logger = logging.getLogger(__name__)
@@ -42,8 +67,73 @@ def run_etl():
     engine = build_engine()
 
     with engine.begin() as conn:
-        processor = ETLProcessor(conn, BILLBOARD_PATH, SPOTIFY_PATH, TOPIC_PATH)
-        processor.process()
+        loader = Loader(conn)
+        processors = (
+            TrackProcessor(
+                BillboardExtractor(conn), loader, BILLBOARD_PATH, SPOTIFY_PATH
+            ),
+            TopicProcessor(Extractor(conn), loader, TOPIC_PATH),
+            EmotionLexiconProcessor(
+                NrcLexiconExtractor(conn),
+                loader,
+                EMOTION_LEXICON_PATH,
+                VAD_LEXICON_PATH,
+            ),
+            EconomicIndicatorProcessor(
+                FredExtractor(conn), loader, ECONOMIC_INDICATOR_PATH, FRED_PATH
+            ),
+        )
+        for processor in processors:
+            processor.process()
+
+    engine.dispose()
+
+
+def plan_track_batches(conn, processor, batch_size):
+    with conn.begin():
+        pending_track_ids = processor.select_pending()[TRACK_ID_COLUMN].tolist()
+    track_id_batches = [
+        pending_track_ids[batch_start : batch_start + batch_size]
+        for batch_start in range(0, len(pending_track_ids), batch_size)
+    ]
+    logger.info(
+        "Planned %d tracks in %d batches of up to %d",
+        len(pending_track_ids),
+        len(track_id_batches),
+        batch_size,
+    )
+    return track_id_batches
+
+
+def process_track_batch(conn, extractor, processor, track_ids):
+    with conn.begin():
+        track_batch_df = extractor.extract_tracks(track_ids)
+    # Runs outside a transaction so slow API calls don't hold one open
+    batch_result = processor.compute_batch(track_batch_df)
+    with conn.begin():
+        processor.load_batch(batch_result)
+
+
+def run_in_batches(conn, extractor, processor, batch_size):
+    track_id_batches = plan_track_batches(conn, processor, batch_size)
+    for batch_number, track_ids in enumerate(track_id_batches, start=1):
+        logger.info("Processing batch %d of %d", batch_number, len(track_id_batches))
+        process_track_batch(conn, extractor, processor, track_ids)
+        logger.info(
+            "Committed batch %d of %d", batch_number, len(track_id_batches)
+        )
+    logger.info("Completed %d batches", len(track_id_batches))
+
+
+def fill_missing_genres():
+    engine = build_engine()
+
+    with engine.connect() as conn:
+        extractor = Extractor(conn)
+        processor = GenreEnrichmentProcessor(
+            extractor, Loader(conn), TrackGenreEnricher(ITunesClient)
+        )
+        run_in_batches(conn, extractor, processor, GENRE_SEARCH_BATCH_SIZE)
 
     engine.dispose()
 
@@ -51,34 +141,15 @@ def run_etl():
 def analyze_lyrics():
     engine = build_engine()
 
-    with engine.begin() as conn:
+    with engine.connect() as conn:
         extractor = Extractor(conn)
-        loader = Loader(conn)
         non_content_words = frozenset().union(
             *map(extractor.extract_word_list, NON_CONTENT_WORD_PATHS)
         )
-        analyzer = LyricsAnalyzer(non_content_words)
-        track_df = extractor.extract_from_db("track")
-        batch_starts = range(0, len(track_df), LYRICS_ANALYSIS_BATCH_SIZE)
-        logger.info(
-            "Starting lyrics analysis of %d tracks in %d batches of up to %d",
-            len(track_df),
-            len(batch_starts),
-            LYRICS_ANALYSIS_BATCH_SIZE,
+        processor = LyricsAnalysisProcessor(
+            extractor, Loader(conn), LyricsAnalyzer(non_content_words)
         )
-
-        for batch_number, batch_start in enumerate(batch_starts, start=1):
-            track_batch_df = track_df.iloc[
-                batch_start : batch_start + LYRICS_ANALYSIS_BATCH_SIZE
-            ]
-            logger.info(
-                "Processing lyrics batch %d of %d", batch_number, len(batch_starts)
-            )
-            lyrics_metric_df, lyrics_ngram_metric_df = analyzer.analyze(track_batch_df)
-            loader.copy_to_db(lyrics_metric_df, "lyrics_metric")
-            loader.copy_to_db(lyrics_ngram_metric_df, "lyrics_ngram_metric")
-
-        logger.info("Completed lyrics analysis of %d tracks", len(track_df))
+        run_in_batches(conn, extractor, processor, LYRICS_ANALYSIS_BATCH_SIZE)
 
     engine.dispose()
 
@@ -88,49 +159,21 @@ def analyze_lyrics_topic():
 
     with engine.connect() as conn:
         extractor = Extractor(conn)
-        loader = Loader(conn)
         with conn.begin():
-            track_df = extractor.extract_from_db("track")
-            topic_df = extractor.extract_from_db("topic")
-            lyrics_topic_df = extractor.extract_from_db("lyrics_topic")
-
-        analyzer = LyricsTopicAnalyzer(topic_df, build_typesafe_client)
-        uncategorized_track_df = analyzer.select_uncategorized(
-            track_df, lyrics_topic_df
+            topic_df = extractor.extract_from_db(TOPIC_TABLE)
+        processor = LyricsTopicProcessor(
+            extractor,
+            Loader(conn),
+            LyricsTopicAnalyzer(topic_df, build_typesafe_client),
         )
-        batch_starts = range(
-            0, len(uncategorized_track_df), LYRICS_ANALYSIS_BATCH_SIZE
-        )
-        logger.info(
-            "Starting lyrics categorization of %d of %d tracks in %d batches of up to %d",
-            len(uncategorized_track_df),
-            len(track_df),
-            len(batch_starts),
-            LYRICS_ANALYSIS_BATCH_SIZE,
-        )
-
-        for batch_number, batch_start in enumerate(batch_starts, start=1):
-            track_batch_df = uncategorized_track_df.iloc[
-                batch_start : batch_start + LYRICS_ANALYSIS_BATCH_SIZE
-            ]
-            logger.info(
-                "Processing categorization batch %d of %d",
-                batch_number,
-                len(batch_starts),
-            )
-            lyrics_topic_batch_df = analyzer.analyze(track_batch_df)
-            with conn.begin():
-                loader.copy_to_db(lyrics_topic_batch_df, "lyrics_topic")
-
-        logger.info(
-            "Completed lyrics categorization of %d tracks", len(uncategorized_track_df)
-        )
+        run_in_batches(conn, extractor, processor, LYRICS_ANALYSIS_BATCH_SIZE)
 
     engine.dispose()
 
 
 if __name__ == "__main__":
     configure_logging()
-    # run_etl()
-    # analyze_lyrics()
+    run_etl()
+    analyze_lyrics()
     analyze_lyrics_topic()
+    fill_missing_genres()

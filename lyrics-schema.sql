@@ -37,6 +37,8 @@ create table track (
   "mode" smallint null,
   time_signature smallint null,
   duration_ms int null,
+  is_explicit boolean null,
+  genre_searched_at timestamptz null,
   unique (title, artist_name)
 );
 
@@ -111,3 +113,48 @@ create table lyrics_topic (
   analysis_version varchar(20) not null,
   primary key (track_id, topic_id, analysis_version)
 );
+
+create table emotion (
+  emotion_id serial primary key,
+  "name" varchar(20) not null unique,
+  display_name varchar(20) not null unique
+);
+
+create table word_emotion (
+  word varchar(50) not null,
+  emotion_id int not null,
+    constraint fk_word_emotion_emotion_id
+      foreign key (emotion_id)
+      references emotion(emotion_id),
+  primary key (word, emotion_id)
+);
+
+create table word_vad (
+  word varchar(50) primary key,
+  valence decimal(4, 3) not null,
+  arousal decimal(4, 3) not null,
+  dominance decimal(4, 3) not null
+);
+
+create table economic_indicator (
+  economic_indicator_id serial primary key,
+  code varchar(20) not null unique,
+  display_name varchar(50) not null unique,
+  unit varchar(20) not null,
+  description varchar(200) not null
+);
+
+create table economic_observation (
+  economic_indicator_id int not null,
+    constraint fk_economic_observation_economic_indicator_id
+      foreign key (economic_indicator_id)
+      references economic_indicator(economic_indicator_id),
+  observation_date date not null,
+  "value" decimal(7, 3) not null,
+  primary key (economic_indicator_id, observation_date)
+);
+
+create index idx_chart_track_track_id on chart_track (track_id);
+create index idx_track_genre_genre_id on track_genre (genre_id);
+create index idx_lyrics_topic_topic_id on lyrics_topic (topic_id);
+create index idx_lyrics_ngram_metric_ngram on lyrics_ngram_metric (ngram, analysis_version);
