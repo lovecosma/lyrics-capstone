@@ -1,10 +1,15 @@
 import logging
 import re
 import unicodedata
+from types import MappingProxyType
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_name(names):
+    return names.str.strip().str.lower()
 
 
 class TrackMerger:
@@ -23,6 +28,9 @@ class TrackMerger:
         re.IGNORECASE,
     )
     TITLE_SUFFIX_PATTERN = re.compile(r"\s*[(\[][^)\]]*[)\]]|\s+-\s+.*$")
+    # Stripped one at a time, so "Song (Subtitle) [Radio Version]" also matches as
+    # "Song Subtitle", which is how Billboard writes it
+    TRAILING_BRACKET_PATTERN = re.compile(r"\s*[(\[][^)\]]*[)\]]\s*$")
     TRACK_SUFFIX_PATTERNS = (VERSION_SUFFIX_PATTERN, TITLE_SUFFIX_PATTERN)
     ALTERNATE_VERSION_PATTERN = re.compile(
         r"\b(?:remix|live|acoustic|unplugged|mix|instrumental|demo|sessions?|extended"
@@ -31,45 +39,54 @@ class TrackMerger:
         r"|\b(?:rock|pop|country|spanish) version\b",
         re.IGNORECASE,
     )
-    BILLBOARD_TO_SPOTIFY_ARTIST_NAMES = {"Pink": "P!nk"}
+    BILLBOARD_ARTIST_ALIASES = MappingProxyType({"Pink": "P!nk"})
+    # Splits a credit like "Drake, Kanye West & Eminem" so it matches on "Drake"
+    LEAD_ARTIST_SEPARATOR = re.compile(
+        r"\s*(?:,|&|\b(?:featuring|with|and|x)\b|\b(?:feat|ft)\.)\s*", re.IGNORECASE
+    )
+    # Spellings that differ between sources, e.g. "A$AP Ferg" and "ASAP Ferg"
+    ARTIST_CHARACTER_REPLACEMENTS = MappingProxyType({"$": "s"})
+    LEADING_ARTICLE_PATTERN = re.compile(r"^the\s+")
+    CONJUNCTION_PATTERN = re.compile(r"\band\b")
     BILLBOARD_ROW_COLUMN = "billboard_row"
     TRACK_NAME_COLUMN = "track_name"
     ARTIST_NAME_COLUMN = "artist_name"
     TRACK_MATCH_NAME_COLUMN = "track_match_name"
     ARTIST_MATCH_NAME_COLUMN = "artist_match_name"
-    MATCH_NAME_COLUMNS = (TRACK_MATCH_NAME_COLUMN, ARTIST_MATCH_NAME_COLUMN)
-    SPOTIFY_INDEX_COLUMN = "Unnamed: 0"
-    SPOTIFY_TRACK_ID_COLUMN = "track_id"
-    SPOTIFY_EXCLUDED_COLUMNS = (
-        SPOTIFY_INDEX_COLUMN,
-        SPOTIFY_TRACK_ID_COLUMN,
-        TRACK_NAME_COLUMN,
-        ARTIST_NAME_COLUMN,
+    LEAD_ARTIST_MATCH_NAME_COLUMN = "lead_artist_match_name"
+    MATCH_NAME_COLUMNS = (
+        TRACK_MATCH_NAME_COLUMN,
+        ARTIST_MATCH_NAME_COLUMN,
+        LEAD_ARTIST_MATCH_NAME_COLUMN,
     )
-    SPOTIFY_COLUMN_SUFFIX = "_spotify"
-    SPOTIFY_COLUMN_SUFFIXES = ("", SPOTIFY_COLUMN_SUFFIX)
-    SPOTIFY_TRACK_NAME_COLUMN = f"{TRACK_NAME_COLUMN}{SPOTIFY_COLUMN_SUFFIX}"
-    SPOTIFY_ARTIST_MATCH_NAME_COLUMN = (
-        f"{ARTIST_MATCH_NAME_COLUMN}{SPOTIFY_COLUMN_SUFFIX}"
+    NAME_COLUMNS = (TRACK_NAME_COLUMN, ARTIST_NAME_COLUMN)
+    CANDIDATE_COLUMN_SUFFIX = "_candidate"
+    CANDIDATE_COLUMN_SUFFIXES = ("", CANDIDATE_COLUMN_SUFFIX)
+    CANDIDATE_TRACK_NAME_COLUMN = f"{TRACK_NAME_COLUMN}{CANDIDATE_COLUMN_SUFFIX}"
+    CANDIDATE_ARTIST_MATCH_NAME_COLUMN = (
+        f"{ARTIST_MATCH_NAME_COLUMN}{CANDIDATE_COLUMN_SUFFIX}"
     )
-    SPOTIFY_YEAR_COLUMN = "year"
-    SPOTIFY_POPULARITY_COLUMN = "popularity"
+    CANDIDATE_LEAD_ARTIST_MATCH_NAME_COLUMN = (
+        f"{LEAD_ARTIST_MATCH_NAME_COLUMN}{CANDIDATE_COLUMN_SUFFIX}"
+    )
+    CANDIDATE_YEAR_COLUMN = "year"
+    CANDIDATE_POPULARITY_COLUMN = "popularity"
     EXACT_ARTIST_MATCH_COLUMN = "is_exact_artist_match"
     TITLE_SUFFIX_COLUMN = "has_title_suffix"
 
-    def transform(self, billboard_df, spotify_df):
+    def transform(self, billboard_df, candidate_track_df):
         logger.info(
-            "Matching %d Billboard rows to %d Spotify tracks",
+            "Matching %d Billboard rows to %d candidate tracks",
             len(billboard_df),
-            len(spotify_df),
+            len(candidate_track_df),
         )
-        spotify_column_names = spotify_df.columns.drop(
-            list(self.SPOTIFY_EXCLUDED_COLUMNS)
+        candidate_column_names = candidate_track_df.columns.drop(
+            list(self.NAME_COLUMNS)
         )
-        candidate_df = self._find_candidates(billboard_df, spotify_df)
-        best_match_df = self._select_best_matches(candidate_df)[spotify_column_names]
+        candidate_df = self._find_candidates(billboard_df, candidate_track_df)
+        best_match_df = self._select_best_matches(candidate_df)[candidate_column_names]
         logger.info(
-            "Matched %d of %d Billboard rows to Spotify tracks",
+            "Matched %d of %d Billboard rows to candidate tracks",
             len(best_match_df),
             len(billboard_df),
         )
@@ -86,10 +103,26 @@ class TrackMerger:
             self.WORD_SEPARATOR, self.PUNCTUATION_PATTERN.sub("", unaccented)
         ).strip()
 
+    def _normalize_artist_name(self, artist_name):
+        for character, replacement in self.ARTIST_CHARACTER_REPLACEMENTS.items():
+            artist_name = artist_name.replace(character, replacement)
+        unconjoined = self.CONJUNCTION_PATTERN.sub(
+            self.WORD_SEPARATOR, self._normalize_name(artist_name)
+        )
+        return self.LEADING_ARTICLE_PATTERN.sub(
+            "",
+            self.WHITESPACE_PATTERN.sub(self.WORD_SEPARATOR, unconjoined).strip(),
+        )
+
+    def _get_lead_artist(self, artist_name):
+        lead_artist, *_other_artists = self.LEAD_ARTIST_SEPARATOR.split(artist_name)
+        # A name that starts with a separator word, like "X Ambassadors", has no lead
+        return lead_artist or artist_name
+
     def _compact_name(self, name):
         return self.WHITESPACE_PATTERN.sub("", name)
 
-    def _get_primary_artist(self, artist_name):
+    def get_primary_artist(self, artist_name):
         primary_artist, *_featured_artists = self.FEATURED_ARTIST_SEPARATOR.split(
             artist_name
         )
@@ -97,38 +130,55 @@ class TrackMerger:
 
     def _get_track_match_names(self, track_name):
         uncredited_name = self.FEATURED_CREDIT_PATTERN.sub("", track_name)
+        unsuffixed_names = [
+            suffix_pattern.sub("", uncredited_name)
+            for suffix_pattern in self.TRACK_SUFFIX_PATTERNS
+        ]
         return sorted(
             {
-                self._compact_name(
-                    self._normalize_name(suffix_pattern.sub("", uncredited_name))
+                self._compact_name(self._normalize_name(name))
+                for name in (
+                    *unsuffixed_names,
+                    *self._strip_trailing_brackets(uncredited_name),
                 )
-                for suffix_pattern in self.TRACK_SUFFIX_PATTERNS
             }
         )
 
-    def _is_exact_artist_match(self, artist_match_name, spotify_artist_match_name):
+    def _strip_trailing_brackets(self, track_name):
+        stripped_names = []
+        while self.TRAILING_BRACKET_PATTERN.search(track_name):
+            track_name = self.TRAILING_BRACKET_PATTERN.sub("", track_name)
+            stripped_names.append(track_name)
+        return stripped_names
+
+    def _is_exact_artist_match(self, artist_match_name, candidate_artist_match_name):
         return self._compact_name(artist_match_name) == self._compact_name(
-            spotify_artist_match_name
+            candidate_artist_match_name
         )
 
-    def _is_featured_artist_match(self, artist_match_name, spotify_artist_match_name):
+    def _is_featured_artist_match(self, artist_match_name, candidate_artist_match_name):
         return artist_match_name.startswith(
-            f"{spotify_artist_match_name}{self.WORD_SEPARATOR}"
+            f"{candidate_artist_match_name}{self.WORD_SEPARATOR}"
         )
 
     def _add_match_names(self, df):
+        primary_artists = (
+            df[self.ARTIST_NAME_COLUMN]
+            .fillna("")
+            .map(self.get_primary_artist)
+            .replace(self.BILLBOARD_ARTIST_ALIASES)
+        )
         match_name_df = df.assign(
             **{
                 self.TRACK_MATCH_NAME_COLUMN: df[self.TRACK_NAME_COLUMN]
                 .fillna("")
                 .map(self._get_track_match_names),
-                self.ARTIST_MATCH_NAME_COLUMN: (
-                    df[self.ARTIST_NAME_COLUMN]
-                    .fillna("")
-                    .map(self._get_primary_artist)
-                    .replace(self.BILLBOARD_TO_SPOTIFY_ARTIST_NAMES)
-                    .map(self._normalize_name)
+                self.ARTIST_MATCH_NAME_COLUMN: primary_artists.map(
+                    self._normalize_artist_name
                 ),
+                self.LEAD_ARTIST_MATCH_NAME_COLUMN: primary_artists.map(
+                    self._get_lead_artist
+                ).map(self._normalize_artist_name),
             }
         ).explode(self.TRACK_MATCH_NAME_COLUMN)
         has_match_names = (
@@ -136,20 +186,20 @@ class TrackMerger:
         )
         return match_name_df[has_match_names]
 
-    def _find_candidates(self, billboard_df, spotify_df):
+    def _find_candidates(self, billboard_df, candidate_track_df):
         billboard_match_df = self._add_match_names(billboard_df)[
             [self.TRACK_NAME_COLUMN, *self.MATCH_NAME_COLUMNS]
         ].reset_index(names=self.BILLBOARD_ROW_COLUMN)
         return billboard_match_df.merge(
-            self._add_match_names(spotify_df),
+            self._add_match_names(candidate_track_df),
             on=self.TRACK_MATCH_NAME_COLUMN,
-            suffixes=self.SPOTIFY_COLUMN_SUFFIXES,
+            suffixes=self.CANDIDATE_COLUMN_SUFFIXES,
         )
 
     def _match_artists(self, candidate_df, is_artist_match):
         artist_match_name_pairs = zip(
             candidate_df[self.ARTIST_MATCH_NAME_COLUMN],
-            candidate_df[self.SPOTIFY_ARTIST_MATCH_NAME_COLUMN],
+            candidate_df[self.CANDIDATE_ARTIST_MATCH_NAME_COLUMN],
         )
         return pd.Series(
             [
@@ -160,13 +210,13 @@ class TrackMerger:
         )
 
     def _is_matching_version(self, candidate_df):
-        spotify_version_suffixes = (
-            candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN]
+        candidate_version_suffixes = (
+            candidate_df[self.CANDIDATE_TRACK_NAME_COLUMN]
             .fillna("")
             .str.findall(self.TITLE_SUFFIX_PATTERN)
             .str.join(self.WORD_SEPARATOR)
         )
-        return ~spotify_version_suffixes.str.contains(
+        return ~candidate_version_suffixes.str.contains(
             self.ALTERNATE_VERSION_PATTERN
         ) | candidate_df[self.TRACK_NAME_COLUMN].str.contains(
             self.ALTERNATE_VERSION_PATTERN, na=False
@@ -174,7 +224,7 @@ class TrackMerger:
 
     def _has_title_suffix(self, candidate_df):
         uncredited_names = (
-            candidate_df[self.SPOTIFY_TRACK_NAME_COLUMN]
+            candidate_df[self.CANDIDATE_TRACK_NAME_COLUMN]
             .fillna("")
             .str.replace(self.FEATURED_CREDIT_PATTERN, "", regex=True)
         )
@@ -184,8 +234,13 @@ class TrackMerger:
         is_exact_artist_match = self._match_artists(
             candidate_df, self._is_exact_artist_match
         )
-        is_artist_match = is_exact_artist_match | self._match_artists(
-            candidate_df, self._is_featured_artist_match
+        is_lead_artist_match = candidate_df[self.LEAD_ARTIST_MATCH_NAME_COLUMN].eq(
+            candidate_df[self.CANDIDATE_LEAD_ARTIST_MATCH_NAME_COLUMN]
+        )
+        is_artist_match = (
+            is_exact_artist_match
+            | is_lead_artist_match
+            | self._match_artists(candidate_df, self._is_featured_artist_match)
         )
         return (
             candidate_df.assign(
@@ -197,9 +252,9 @@ class TrackMerger:
             .sort_values(
                 [
                     self.EXACT_ARTIST_MATCH_COLUMN,
-                    self.SPOTIFY_YEAR_COLUMN,
+                    self.CANDIDATE_YEAR_COLUMN,
                     self.TITLE_SUFFIX_COLUMN,
-                    self.SPOTIFY_POPULARITY_COLUMN,
+                    self.CANDIDATE_POPULARITY_COLUMN,
                 ],
                 ascending=[False, True, True, False],
                 kind="stable",
@@ -213,12 +268,12 @@ class GenreTransformer:
     def transform(self, track_df):
         genre_df = (
             track_df["genre"]
+            .pipe(normalize_name)
             .dropna()
             .drop_duplicates()
             .reset_index(drop=True)
             .to_frame(name="name")
         )
-        genre_df["name"] = genre_df["name"].str.strip()
         logger.info("Built %d genres", len(genre_df))
         return genre_df
 
@@ -240,7 +295,7 @@ class ChartTransformer:
 class TrackTransformer:
     SONG_KEY_COLUMNS = ("track_name", "artist_name")
     CHART_YEAR_COLUMN = "chart_year"
-    COLUMN_RENAMES = {"track_name": "title"}
+    COLUMN_RENAMES = MappingProxyType({"track_name": "title"})
     TRACK_COLUMNS = (
         "title",
         "artist_name",
@@ -284,6 +339,7 @@ class TrackGenreTransformer:
             left_on=["title", "artist_name"],
             right_on=["track_name", "artist_name"],
         ).drop(columns=["track_name"])
+        track_df["genre"] = normalize_name(track_df["genre"])
         track_genre_df = track_df.merge(
             db_genre_df, how="inner", left_on="genre", right_on="name"
         ).drop(columns=["genre", "name"])
@@ -319,10 +375,173 @@ class ChartTrackTransformer:
         return chart_track_df
 
 
-class TopicsTransformer:
-    def transform(self, topic_df):
-        topic_df = topic_df.drop_duplicates(subset=["name"]).dropna()[
-            ["name", "display_name", "description"]
-        ]
-        logger.info("Built %d topics", len(topic_df))
-        return topic_df
+class DroppedGVariantBuilder:
+    GERUND_SUFFIX = "ing"
+    # LyricsTokenizer turns "lovin'" into "lovin", so "loving" also matches as "lovin"
+    DROPPED_G_SUFFIX = "in"
+    # Skips one-syllable words like "king" and "sing" that aren't gerunds
+    MIN_GERUND_STEM_LENGTH = 2
+
+    def build(self, lexicon_df, word_column, lexicon_words):
+        words = lexicon_df[word_column]
+        stems = words.str.removesuffix(self.GERUND_SUFFIX)
+        variants = stems + self.DROPPED_G_SUFFIX
+        is_gerund = words.str.endswith(self.GERUND_SUFFIX) & stems.str.len().ge(
+            self.MIN_GERUND_STEM_LENGTH
+        )
+        is_new_variant = is_gerund & ~variants.isin(lexicon_words)
+        return lexicon_df[is_new_variant].assign(
+            **{word_column: variants[is_new_variant]}
+        )
+
+
+class EmotionLexiconTransformer:
+    WORD_COLUMN = "word"
+    EMOTION_COLUMN = "emotion"
+    ASSOCIATION_COLUMN = "association"
+    LEXICON_COLUMNS = (WORD_COLUMN, EMOTION_COLUMN, ASSOCIATION_COLUMN)
+    ASSOCIATED = 1
+
+    def __init__(self, variant_builder):
+        self._variant_builder = variant_builder
+
+    def transform(self, lexicon_df):
+        lexicon_df = lexicon_df.dropna(subset=[self.EMOTION_COLUMN])
+        lexicon_df = lexicon_df.assign(
+            **{
+                self.WORD_COLUMN: normalize_name(lexicon_df[self.WORD_COLUMN]),
+                self.EMOTION_COLUMN: lexicon_df[self.EMOTION_COLUMN].str.strip(),
+            }
+        )
+        associated_df = lexicon_df[
+            lexicon_df[self.ASSOCIATION_COLUMN].eq(self.ASSOCIATED)
+        ][[self.WORD_COLUMN, self.EMOTION_COLUMN]]
+        word_emotion_df = pd.concat(
+            [
+                associated_df,
+                self._variant_builder.build(
+                    associated_df,
+                    self.WORD_COLUMN,
+                    frozenset(lexicon_df[self.WORD_COLUMN]),
+                ),
+            ],
+            ignore_index=True,
+        ).drop_duplicates()
+        logger.info(
+            "Built %d word emotions for %d words",
+            len(word_emotion_df),
+            word_emotion_df[self.WORD_COLUMN].nunique(),
+        )
+        return word_emotion_df
+
+
+class WordVadTransformer:
+    WORD_COLUMN = "word"
+    VALENCE_COLUMN = "valence"
+    AROUSAL_COLUMN = "arousal"
+    DOMINANCE_COLUMN = "dominance"
+    LEXICON_COLUMNS = (WORD_COLUMN, VALENCE_COLUMN, AROUSAL_COLUMN, DOMINANCE_COLUMN)
+
+    def __init__(self, variant_builder):
+        self._variant_builder = variant_builder
+
+    def transform(self, lexicon_df):
+        lexicon_df = lexicon_df.dropna()
+        lexicon_df = lexicon_df.assign(
+            **{self.WORD_COLUMN: normalize_name(lexicon_df[self.WORD_COLUMN])}
+        ).drop_duplicates(subset=[self.WORD_COLUMN])
+        word_vad_df = pd.concat(
+            [
+                lexicon_df,
+                self._variant_builder.build(
+                    lexicon_df,
+                    self.WORD_COLUMN,
+                    frozenset(lexicon_df[self.WORD_COLUMN]),
+                ),
+            ],
+            ignore_index=True,
+        )[list(self.LEXICON_COLUMNS)]
+        logger.info("Built VAD scores for %d words", len(word_vad_df))
+        return word_vad_df
+
+
+class EmotionTransformer:
+    EMOTION_COLUMN = EmotionLexiconTransformer.EMOTION_COLUMN
+    NAME_COLUMN = "name"
+    DISPLAY_NAME_COLUMN = "display_name"
+
+    def transform(self, word_emotion_df):
+        emotion_df = (
+            word_emotion_df[self.EMOTION_COLUMN]
+            .drop_duplicates()
+            .sort_values()
+            .reset_index(drop=True)
+            .to_frame(name=self.NAME_COLUMN)
+        )
+        emotion_df[self.DISPLAY_NAME_COLUMN] = emotion_df[self.NAME_COLUMN].str.title()
+        logger.info("Built %d emotions", len(emotion_df))
+        return emotion_df
+
+
+class WordEmotionTransformer:
+    WORD_COLUMN = EmotionLexiconTransformer.WORD_COLUMN
+    EMOTION_COLUMN = EmotionLexiconTransformer.EMOTION_COLUMN
+    EMOTION_NAME_COLUMN = EmotionTransformer.NAME_COLUMN
+    EMOTION_ID_COLUMN = "emotion_id"
+    WORD_EMOTION_COLUMNS = (WORD_COLUMN, EMOTION_ID_COLUMN)
+
+    def transform(self, db_emotion_df, word_emotion_df):
+        word_emotion_df = word_emotion_df.merge(
+            db_emotion_df,
+            how="inner",
+            left_on=self.EMOTION_COLUMN,
+            right_on=self.EMOTION_NAME_COLUMN,
+        )[list(self.WORD_EMOTION_COLUMNS)]
+        logger.info("Linked %d word emotions", len(word_emotion_df))
+        return word_emotion_df
+
+
+class ReferenceTableTransformer:
+    KEY_COLUMN = None
+    COLUMNS = ()
+    ROW_DESCRIPTION = None
+
+    def transform(self, reference_df):
+        reference_df = (
+            reference_df[list(self.COLUMNS)]
+            .drop_duplicates(subset=[self.KEY_COLUMN])
+            .dropna()
+        )
+        logger.info("Built %d %s", len(reference_df), self.ROW_DESCRIPTION)
+        return reference_df
+
+
+class EconomicIndicatorTransformer(ReferenceTableTransformer):
+    KEY_COLUMN = "code"
+    COLUMNS = (KEY_COLUMN, "display_name", "unit", "description")
+    ROW_DESCRIPTION = "economic indicators"
+
+
+class EconomicObservationTransformer:
+    CODE_COLUMN = EconomicIndicatorTransformer.KEY_COLUMN
+    INDICATOR_ID_COLUMN = "economic_indicator_id"
+    OBSERVATION_DATE_COLUMN = "observation_date"
+    VALUE_COLUMN = "value"
+    OBSERVATION_COLUMNS = (INDICATOR_ID_COLUMN, OBSERVATION_DATE_COLUMN, VALUE_COLUMN)
+
+    def transform(self, db_indicator_df, observation_df):
+        observation_df = observation_df.dropna(subset=[self.VALUE_COLUMN]).merge(
+            db_indicator_df, how="inner", on=self.CODE_COLUMN
+        )[list(self.OBSERVATION_COLUMNS)]
+        logger.info(
+            "Linked %d observations to %d economic indicators",
+            len(observation_df),
+            observation_df[self.INDICATOR_ID_COLUMN].nunique(),
+        )
+        return observation_df
+
+
+class TopicsTransformer(ReferenceTableTransformer):
+    KEY_COLUMN = "name"
+    COLUMNS = (KEY_COLUMN, "display_name", "description")
+    ROW_DESCRIPTION = "topics"
