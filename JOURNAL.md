@@ -127,3 +127,33 @@
 - Songs got shorter and sadder: about a minute shorter, lower valence and energy, more acoustic.
 - Songs use fewer words but repeat less.
 
+# 10/16/2026
+
+## Closing out ETL
+- Filling missing genres
+  - Using itunes API to normalize genres
+- Adding Economic and Emotion Lexicon Datasets
+- Mapping all genres to 6 broad genres
+
+## Refactoring
+-  split the single ETLProcessor into four per-domain processors (tracks, topics, emotion lexicons, economic indicators) 
+-  moved the three batched steps (genre enrichment, lyrics analysis, topic categorization) into processors that each pick their pending tracks and load each batch 
+-  Re-running is now safe: steps skip work that's already done
+
+## Adding Datasets
+- NRC Emotion Lexicon: emotions in the words themselves
+  - A free word list (for research and non-commercial use) that tags about 14,000 English words with emotions (joy,sadness, anger, fear, trust…) and positive/negative sentiment
+- assigns emotions to words. Tests whether the lyrics got sadder too
+
+- FRED (the St. Louis Fed's public data service)
+- Unemployment rate (UNRATE)
+  - the share of the US labor force that's out of work and looking, published by the Bureau of Labor Statistics. It's adjusted to remove normal seasonal swings, such as holiday hiring.
+- What it measures: how bad the economy actually is.
+
+- Consumer sentiment (UMCSENT)
+- a University of Michigan survey index of how optimistic Americans feel about their finances and the economy, scaled so that early 1966 = 100.
+- What it measures: how bad people feel things are.
+- In your window: it ranges from about 60 (2022, the inflation surge) to about 108 (2000).
+
+## Writing Queries for Dash App
+
