@@ -278,6 +278,71 @@ class GenreTransformer:
         return genre_df
 
 
+class BroadGenreTransformer:
+    NAME_COLUMN = "name"
+    BROAD_GENRE_COLUMN = "broad_genre"
+
+    def transform(self, genre_mapping_df):
+        broad_genre_df = (
+            genre_mapping_df[self.BROAD_GENRE_COLUMN]
+            .str.strip()
+            .dropna()
+            .drop_duplicates()
+            .reset_index(drop=True)
+            .to_frame(name=self.NAME_COLUMN)
+        )
+        logger.info("Built %d broad genres", len(broad_genre_df))
+        return broad_genre_df
+
+
+class GenreMappingTransformer:
+    NAME_COLUMN = "name"
+    GENRE_COLUMN = "genre"
+    BROAD_GENRE_COLUMN = BroadGenreTransformer.BROAD_GENRE_COLUMN
+    GENRE_ID_COLUMN = "genre_id"
+    BROAD_GENRE_ID_COLUMN = "broad_genre_id"
+    UNMAPPED_SEPARATOR = ", "
+
+    def transform(self, db_genre_df, db_broad_genre_df, genre_mapping_df):
+        genre_mapping_df = genre_mapping_df.assign(
+            **{
+                self.GENRE_COLUMN: normalize_name(genre_mapping_df[self.GENRE_COLUMN]),
+                self.BROAD_GENRE_COLUMN: genre_mapping_df[
+                    self.BROAD_GENRE_COLUMN
+                ].str.strip(),
+            }
+        )
+        mapped_genre_df = (
+            db_genre_df[[self.GENRE_ID_COLUMN, self.NAME_COLUMN]]
+            .rename(columns={self.NAME_COLUMN: self.GENRE_COLUMN})
+            .merge(genre_mapping_df, how="inner", on=self.GENRE_COLUMN)
+            .merge(
+                db_broad_genre_df.rename(
+                    columns={self.NAME_COLUMN: self.BROAD_GENRE_COLUMN}
+                ),
+                how="inner",
+                on=self.BROAD_GENRE_COLUMN,
+            )[[self.GENRE_ID_COLUMN, self.BROAD_GENRE_ID_COLUMN]]
+            .drop_duplicates(subset=[self.GENRE_ID_COLUMN])
+        )
+        is_mapped = db_genre_df[self.GENRE_ID_COLUMN].isin(
+            mapped_genre_df[self.GENRE_ID_COLUMN]
+        )
+        unmapped_genres = sorted(db_genre_df.loc[~is_mapped, self.NAME_COLUMN])
+        if unmapped_genres:
+            logger.warning(
+                "No broad genre for %d genres: %s",
+                len(unmapped_genres),
+                self.UNMAPPED_SEPARATOR.join(unmapped_genres),
+            )
+        logger.info(
+            "Mapped %d of %d genres to a broad genre",
+            len(mapped_genre_df),
+            len(db_genre_df),
+        )
+        return mapped_genre_df
+
+
 class ChartTransformer:
     def transform(self, track_df):
         chart_df = (

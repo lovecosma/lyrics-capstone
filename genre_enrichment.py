@@ -18,15 +18,40 @@ class GenreSearchResult(NamedTuple):
     searched_track_df: pd.DataFrame
 
 
-class TrackGenreEnricher:
+class GenreEnricher:
     TRACK_ID_COLUMN = "track_id"
     GENRE_SEARCHED_AT_COLUMN = "genre_searched_at"
-    SEARCH_TIME_ZONE = "UTC"
     GENRE_NAME_COLUMN = "name"
     GENRE_COLUMN = "genre"
     IS_EXPLICIT_COLUMN = "is_explicit"
     TITLE_COLUMN = "title"
     ARTIST_NAME_COLUMN = "artist_name"
+
+    def __init__(self):
+        self._genre_transformer = GenreTransformer()
+
+    def select_missing(self, track_df, track_genre_df):
+        has_genre = track_df[self.TRACK_ID_COLUMN].isin(
+            track_genre_df[self.TRACK_ID_COLUMN]
+        )
+        was_searched = track_df[self.GENRE_SEARCHED_AT_COLUMN].notna()
+        return track_df[~has_genre & ~was_searched]
+
+    def select_new_genres(self, source_track_df, genre_df):
+        found_genre_df = self._genre_transformer.transform(source_track_df)
+        is_loaded = found_genre_df[self.GENRE_NAME_COLUMN].isin(
+            genre_df[self.GENRE_NAME_COLUMN]
+        )
+        return found_genre_df[~is_loaded]
+
+    def select_explicit(self, source_track_df):
+        return source_track_df[[self.TRACK_ID_COLUMN, self.IS_EXPLICIT_COLUMN]].dropna(
+            subset=[self.IS_EXPLICIT_COLUMN]
+        )
+
+
+class TrackGenreEnricher(GenreEnricher):
+    SEARCH_TIME_ZONE = "UTC"
     SEARCH_POSITION_COLUMN = "search_position"
     ITUNES_TRACK_NAME_FIELD = "trackName"
     ITUNES_ARTIST_NAME_FIELD = "artistName"
@@ -45,7 +70,7 @@ class TrackGenreEnricher:
         {
             ITUNES_TRACK_NAME_FIELD: TrackMerger.TRACK_NAME_COLUMN,
             ITUNES_ARTIST_NAME_FIELD: TrackMerger.ARTIST_NAME_COLUMN,
-            ITUNES_GENRE_FIELD: GENRE_COLUMN,
+            ITUNES_GENRE_FIELD: GenreEnricher.GENRE_COLUMN,
         }
     )
     ITUNES_RESULT_COLUMNS = (
@@ -56,16 +81,9 @@ class TrackGenreEnricher:
     )
 
     def __init__(self, create_client):
+        super().__init__()
         self._create_client = create_client
         self._merger = TrackMerger()
-        self._genre_transformer = GenreTransformer()
-
-    def select_missing(self, track_df, track_genre_df):
-        has_genre = track_df[self.TRACK_ID_COLUMN].isin(
-            track_genre_df[self.TRACK_ID_COLUMN]
-        )
-        was_searched = track_df[self.GENRE_SEARCHED_AT_COLUMN].notna()
-        return track_df[~has_genre & ~was_searched]
 
     def enrich(self, track_df):
         logger.info("Searching iTunes for genres of %d tracks", len(track_df))
@@ -103,18 +121,6 @@ class TrackGenreEnricher:
             len(track_df) - len(searched_track_df),
         )
         return GenreSearchResult(source_track_df, searched_track_df)
-
-    def select_new_genres(self, source_track_df, genre_df):
-        found_genre_df = self._genre_transformer.transform(source_track_df)
-        is_loaded = found_genre_df[self.GENRE_NAME_COLUMN].isin(
-            genre_df[self.GENRE_NAME_COLUMN]
-        )
-        return found_genre_df[~is_loaded]
-
-    def select_explicit(self, source_track_df):
-        return source_track_df[[self.TRACK_ID_COLUMN, self.IS_EXPLICIT_COLUMN]].dropna(
-            subset=[self.IS_EXPLICIT_COLUMN]
-        )
 
     def _search_track(self, client, track):
         try:
@@ -170,6 +176,32 @@ class TrackGenreEnricher:
         )
 
 
+# Replays genres saved from earlier iTunes searches instead of searching again
+class SnapshotGenreEnricher(GenreEnricher):
+    def __init__(self, snapshot_df):
+        super().__init__()
+        self._snapshot_df = snapshot_df
+
+    def enrich(self, track_df):
+        snapshot_track_df = track_df[
+            [self.TRACK_ID_COLUMN, self.TITLE_COLUMN, self.ARTIST_NAME_COLUMN]
+        ].merge(self._snapshot_df, on=[self.TITLE_COLUMN, self.ARTIST_NAME_COLUMN])
+        source_track_df = (
+            snapshot_track_df.dropna(subset=[self.GENRE_COLUMN])
+            .rename(columns={self.TITLE_COLUMN: TrackMerger.TRACK_NAME_COLUMN})
+            .drop(columns=[self.GENRE_SEARCHED_AT_COLUMN])
+        )
+        searched_track_df = snapshot_track_df.dropna(
+            subset=[self.GENRE_SEARCHED_AT_COLUMN]
+        )[[self.TRACK_ID_COLUMN, self.GENRE_SEARCHED_AT_COLUMN]]
+        logger.info(
+            "Restored genres for %d of %d tracks from the snapshot",
+            len(source_track_df),
+            len(track_df),
+        )
+        return GenreSearchResult(source_track_df, searched_track_df)
+
+
 class GenreEnrichmentProcessor:
     def __init__(self, extractor, loader, enricher):
         self._extractor = extractor
@@ -204,8 +236,8 @@ class GenreEnrichmentProcessor:
         self._loader.update_db(
             self._enricher.select_explicit(source_track_df),
             TRACK_TABLE,
-            TrackGenreEnricher.TRACK_ID_COLUMN,
+            GenreEnricher.TRACK_ID_COLUMN,
         )
         self._loader.update_db(
-            searched_track_df, TRACK_TABLE, TrackGenreEnricher.TRACK_ID_COLUMN
+            searched_track_df, TRACK_TABLE, GenreEnricher.TRACK_ID_COLUMN
         )

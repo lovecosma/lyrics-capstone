@@ -224,6 +224,7 @@ data/*
 !data/filler_words.txt
 !data/lyric_stopwords.txt
 !data/topics.csv
+!data/genre_mapping.csv
 planning/
 .env
 TRENDS.md

@@ -2,9 +2,18 @@ drop schema if exists billboard_lyrics cascade;
 create schema billboard_lyrics;
 set search_path to billboard_lyrics;
 
+create table broad_genre (
+  broad_genre_id serial primary key,
+  "name" varchar(50) not null unique
+);
+
 create table genre (
   genre_id serial primary key,
-  "name" varchar(50) not null unique
+  "name" varchar(50) not null unique,
+  broad_genre_id int null,
+    constraint fk_genre_broad_genre_id
+      foreign key (broad_genre_id)
+      references broad_genre(broad_genre_id)
 );
 
 create table chart (

@@ -8,6 +8,7 @@ from psycopg import sql
 from sqlalchemy import text
 
 from transformers import (
+    BroadGenreTransformer,
     ChartTrackTransformer,
     ChartTransformer,
     DroppedGVariantBuilder,
@@ -15,6 +16,7 @@ from transformers import (
     EconomicObservationTransformer,
     EmotionLexiconTransformer,
     EmotionTransformer,
+    GenreMappingTransformer,
     TopicsTransformer,
     TrackMerger,
     TrackTransformer,
@@ -26,6 +28,7 @@ LYRICS_SCHEMA = "billboard_lyrics"
 TRACK_ID_COLUMN = "track_id"
 TRACK_TABLE = "track"
 GENRE_TABLE = "genre"
+BROAD_GENRE_TABLE = "broad_genre"
 TRACK_GENRE_TABLE = "track_genre"
 CHART_TABLE = "chart"
 CHART_TRACK_TABLE = "chart_track"
@@ -285,6 +288,41 @@ class TopicProcessor:
         topic_df = self._extractor.extract_from_csv(self._topic_csv_path)
         self._loader.load_to_db(TopicsTransformer().transform(topic_df), TOPIC_TABLE)
         logger.info("Completed topic ETL")
+
+
+class GenreMappingProcessor:
+    def __init__(self, extractor, loader, genre_mapping_csv_path):
+        self._extractor = extractor
+        self._loader = loader
+        self._genre_mapping_csv_path = genre_mapping_csv_path
+
+    def process(self):
+        logger.info("Starting genre mapping ETL")
+        genre_mapping_df = self._extractor.extract_from_csv(
+            self._genre_mapping_csv_path
+        )
+        self._loader.load_to_db(
+            self._select_new_broad_genres(genre_mapping_df), BROAD_GENRE_TABLE
+        )
+
+        mapped_genre_df = GenreMappingTransformer().transform(
+            self._extractor.extract_from_db(GENRE_TABLE),
+            self._extractor.extract_from_db(BROAD_GENRE_TABLE),
+            genre_mapping_df,
+        )
+        self._loader.update_db(
+            mapped_genre_df, GENRE_TABLE, GenreMappingTransformer.GENRE_ID_COLUMN
+        )
+        logger.info("Completed genre mapping ETL")
+
+    def _select_new_broad_genres(self, genre_mapping_df):
+        broad_genre_df = BroadGenreTransformer().transform(genre_mapping_df)
+        is_loaded = broad_genre_df[BroadGenreTransformer.NAME_COLUMN].isin(
+            self._extractor.extract_from_db(BROAD_GENRE_TABLE)[
+                BroadGenreTransformer.NAME_COLUMN
+            ]
+        )
+        return broad_genre_df[~is_loaded]
 
 
 class EmotionLexiconProcessor:

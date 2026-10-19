@@ -13,18 +13,25 @@ from etl import (
     EmotionLexiconProcessor,
     Extractor,
     FredExtractor,
+    GenreMappingProcessor,
     Loader,
     NrcLexiconExtractor,
     TopicProcessor,
     TrackProcessor,
 )
-from genre_enrichment import GenreEnrichmentProcessor, TrackGenreEnricher
+from genre_enrichment import (
+    GenreEnricher,
+    GenreEnrichmentProcessor,
+    SnapshotGenreEnricher,
+    TrackGenreEnricher,
+)
 from itunes import ITunesClient
 from lyrics_analysis import (
     LyricsAnalysisProcessor,
     LyricsAnalyzer,
     LyricsTopicAnalyzer,
     LyricsTopicProcessor,
+    SnapshotLyricsTopicAnalyzer,
 )
 
 os.chdir(os.path.dirname(__file__))
@@ -32,6 +39,9 @@ os.chdir(os.path.dirname(__file__))
 BILLBOARD_PATH = "data/billboard-hot100-lyrics-main"
 SPOTIFY_PATH = "data/spotify_tracks.csv"
 TOPIC_PATH = "data/topics.csv"
+GENRE_SNAPSHOT_PATH = "data/itunes_track_genres.csv"
+GENRE_MAPPING_PATH = "data/genre_mapping.csv"
+LYRICS_TOPIC_SNAPSHOT_PATH = "data/typesafe_lyrics_topics.csv"
 EMOTION_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/emotion-lexicon.txt"
 VAD_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/vad-lexicon.txt"
 ECONOMIC_INDICATOR_PATH = "data/economic_indicators.csv"
@@ -44,6 +54,7 @@ NON_CONTENT_WORD_PATHS = (
 LYRICS_ANALYSIS_BATCH_SIZE = 500
 # About 2.5 minutes of iTunes requests per committed batch
 GENRE_SEARCH_BATCH_SIZE = 50
+GENRE_SNAPSHOT_BATCH_SIZE = 500
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
 
 logger = logging.getLogger(__name__)
@@ -108,7 +119,6 @@ def plan_track_batches(conn, processor, batch_size):
 def process_track_batch(conn, extractor, processor, track_ids):
     with conn.begin():
         track_batch_df = extractor.extract_tracks(track_ids)
-    # Runs outside a transaction so slow API calls don't hold one open
     batch_result = processor.compute_batch(track_batch_df)
     with conn.begin():
         processor.load_batch(batch_result)
@@ -119,9 +129,7 @@ def run_in_batches(conn, extractor, processor, batch_size):
     for batch_number, track_ids in enumerate(track_id_batches, start=1):
         logger.info("Processing batch %d of %d", batch_number, len(track_id_batches))
         process_track_batch(conn, extractor, processor, track_ids)
-        logger.info(
-            "Committed batch %d of %d", batch_number, len(track_id_batches)
-        )
+        logger.info("Committed batch %d of %d", batch_number, len(track_id_batches))
     logger.info("Completed %d batches", len(track_id_batches))
 
 
@@ -134,6 +142,33 @@ def fill_missing_genres():
             extractor, Loader(conn), TrackGenreEnricher(ITunesClient)
         )
         run_in_batches(conn, extractor, processor, GENRE_SEARCH_BATCH_SIZE)
+
+    engine.dispose()
+
+
+def load_genre_snapshot():
+    engine = build_engine()
+
+    with engine.connect() as conn:
+        extractor = Extractor(conn)
+        snapshot_df = extractor.extract_from_csv(
+            GENRE_SNAPSHOT_PATH, parse_dates=[GenreEnricher.GENRE_SEARCHED_AT_COLUMN]
+        )
+        processor = GenreEnrichmentProcessor(
+            extractor, Loader(conn), SnapshotGenreEnricher(snapshot_df)
+        )
+        run_in_batches(conn, extractor, processor, GENRE_SNAPSHOT_BATCH_SIZE)
+
+    engine.dispose()
+
+
+def map_genres():
+    engine = build_engine()
+
+    with engine.begin() as conn:
+        GenreMappingProcessor(
+            Extractor(conn), Loader(conn), GENRE_MAPPING_PATH
+        ).process()
 
     engine.dispose()
 
@@ -171,9 +206,28 @@ def analyze_lyrics_topic():
     engine.dispose()
 
 
+def load_lyrics_topic_snapshot():
+    engine = build_engine()
+
+    with engine.connect() as conn:
+        extractor = Extractor(conn)
+        with conn.begin():
+            topic_df = extractor.extract_from_db(TOPIC_TABLE)
+        snapshot_df = extractor.extract_from_csv(LYRICS_TOPIC_SNAPSHOT_PATH)
+        processor = LyricsTopicProcessor(
+            extractor,
+            Loader(conn),
+            SnapshotLyricsTopicAnalyzer(topic_df, snapshot_df),
+        )
+        run_in_batches(conn, extractor, processor, LYRICS_ANALYSIS_BATCH_SIZE)
+
+    engine.dispose()
+
+
 if __name__ == "__main__":
     configure_logging()
     run_etl()
     analyze_lyrics()
-    analyze_lyrics_topic()
-    fill_missing_genres()
+    load_lyrics_topic_snapshot()
+    load_genre_snapshot()
+    map_genres()

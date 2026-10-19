@@ -208,22 +208,11 @@ class LyricsAnalyzer:
         return not all(word in self._non_content_words for word in gram)
 
 
-class LyricsTopicAnalyzer:
+class TopicAnalyzer:
     ANALYSIS_VERSION = "v1"
-    MAX_CONCURRENT_REQUESTS = 8
-    OTHER_TOPIC = "other"
-    PRIMARY_TOPIC_QUESTION_ID = "primary_topic"
-    PRIMARY_TOPIC_INSTRUCTIONS = (
-        "What is the main theme of the lyrics in `song.lyrics`?"
-    )
-    TOPIC_PRESENCE_QUESTION = (
-        "Is `theme` a substantial theme of the lyrics in `song.lyrics`, "
-        "beyond a single passing line?"
-    )
     TRACK_ID_COLUMN = "track_id"
     TOPIC_ID_COLUMN = "topic_id"
     TOPIC_NAME_COLUMN = "name"
-    TOPIC_DESCRIPTION_COLUMN = "description"
     IS_PRIMARY_COLUMN = "is_primary"
     PRIMARY_PROBABILITY_COLUMN = "primary_probability"
     PRESENCE_PROBABILITY_COLUMN = "presence_probability"
@@ -239,13 +228,9 @@ class LyricsTopicAnalyzer:
         ANALYSIS_VERSION_COLUMN,
     )
 
-    def __init__(self, topic_df, create_client):
-        self._create_client = create_client
-        self._cleaner = LyricsCleaner()
-        topic_names = topic_df[self.TOPIC_NAME_COLUMN]
-        self._topic_ids = dict(zip(topic_names, topic_df[self.TOPIC_ID_COLUMN]))
-        self._questions = self._build_questions(
-            dict(zip(topic_names, topic_df[self.TOPIC_DESCRIPTION_COLUMN]))
+    def __init__(self, topic_df):
+        self._topic_ids = dict(
+            zip(topic_df[self.TOPIC_NAME_COLUMN], topic_df[self.TOPIC_ID_COLUMN])
         )
 
     def select_uncategorized(self, track_df, lyrics_topic_df):
@@ -256,6 +241,33 @@ class LyricsTopicAnalyzer:
             is_current_version
         ]
         return track_df[~track_df[self.TRACK_ID_COLUMN].isin(categorized_track_ids)]
+
+
+class LyricsTopicAnalyzer(TopicAnalyzer):
+    MAX_CONCURRENT_REQUESTS = 8
+    OTHER_TOPIC = "other"
+    PRIMARY_TOPIC_QUESTION_ID = "primary_topic"
+    PRIMARY_TOPIC_INSTRUCTIONS = (
+        "What is the main theme of the lyrics in `song.lyrics`?"
+    )
+    TOPIC_PRESENCE_QUESTION = (
+        "Is `theme` a substantial theme of the lyrics in `song.lyrics`, "
+        "beyond a single passing line?"
+    )
+    TOPIC_DESCRIPTION_COLUMN = "description"
+
+    def __init__(self, topic_df, create_client):
+        super().__init__(topic_df)
+        self._create_client = create_client
+        self._cleaner = LyricsCleaner()
+        self._questions = self._build_questions(
+            dict(
+                zip(
+                    topic_df[self.TOPIC_NAME_COLUMN],
+                    topic_df[self.TOPIC_DESCRIPTION_COLUMN],
+                )
+            )
+        )
 
     def analyze(self, track_df):
         logger.info("Categorizing lyrics for %d tracks", len(track_df))
@@ -349,6 +361,45 @@ class LyricsTopicAnalyzer:
         if topic == self.OTHER_TOPIC:
             return None
         return response.nouls[topic].noul
+
+
+# Replays topics saved from earlier TypeSafe runs instead of classifying again
+class SnapshotLyricsTopicAnalyzer(TopicAnalyzer):
+    TITLE_COLUMN = "title"
+    ARTIST_NAME_COLUMN = "artist_name"
+    TOPIC_COLUMN = "topic"
+
+    def __init__(self, topic_df, snapshot_df):
+        super().__init__(topic_df)
+        self._snapshot_df = snapshot_df
+
+    def analyze(self, track_df):
+        is_current_version = self._snapshot_df[self.ANALYSIS_VERSION_COLUMN].eq(
+            self.ANALYSIS_VERSION
+        )
+        snapshot_topic_df = track_df[
+            [self.TRACK_ID_COLUMN, self.TITLE_COLUMN, self.ARTIST_NAME_COLUMN]
+        ].merge(
+            self._snapshot_df[is_current_version],
+            on=[self.TITLE_COLUMN, self.ARTIST_NAME_COLUMN],
+        )
+        lyrics_topic_df = (
+            snapshot_topic_df.assign(
+                **{
+                    self.TOPIC_ID_COLUMN: snapshot_topic_df[self.TOPIC_COLUMN].map(
+                        self._topic_ids
+                    )
+                }
+            )
+            .dropna(subset=[self.TOPIC_ID_COLUMN])
+            .astype({self.TOPIC_ID_COLUMN: int})[list(self.LYRICS_TOPIC_COLUMNS)]
+        )
+        logger.info(
+            "Restored topics for %d of %d tracks from the snapshot",
+            lyrics_topic_df[self.TRACK_ID_COLUMN].nunique(),
+            len(track_df),
+        )
+        return lyrics_topic_df
 
 
 class LyricsAnalysisProcessor:
