@@ -44,8 +44,8 @@
 ### Different genres emphasize different lyrical themes
 
 - Love and relationships is the most popular topic of R&B
-- Dance music emphasizes `party_celebration` and `lifestyle_success`
-- Dance becomes increasingly more about `party_celebration` instead of heartbreak
+- Pop music emphasizes `party_celebration` and `lifestyle_success`
+- Pop becomes increasingly more about `party_celebration` instead of heartbreak
 
 ### Vocabulary and commonly used phrases have changed
 

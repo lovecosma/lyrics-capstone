@@ -1,0 +1,109 @@
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+
+:root {
+  --display: "Archivo", system-ui, sans-serif;
+  --body: "Literata", Georgia, serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --muted: #5b6170;
+  --paper: #f6f7f9;
+  --sheet: #ffffff;
+  --ink: #16181d;
+  --rule: #d9dce3;
+  --sheet-border: #c4c9d3;
+  --sheet-shadow: 0 1px 3px rgba(22, 24, 29, 0.08);
+  --up: #15803d;
+  --down: #b91c1c;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--body);
+  line-height: 1.6;
+}
+
+h1,
+h2 {
+  font-family: var(--display);
+  line-height: 1.1;
+}
+
+.container {
+  display: grid;
+  gap: 28px;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 40px 16px 64px;
+}
+
+.page-header {
+  padding-bottom: 20px;
+  border-bottom: 3px solid var(--ink);
+}
+
+.sheet {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 24px max(16px, 3vw);
+  background: var(--sheet);
+  border: 1px solid var(--sheet-border);
+  border-radius: 4px;
+  box-shadow: var(--sheet-shadow);
+}
+
+.sheet > * {
+  margin: 0;
+  min-width: 0;
+}
+
+.chart-note {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-scroll th,
+.table-scroll td {
+  padding: 6px 10px;
+  text-align: right;
+  border-bottom: 1px solid var(--rule);
+  white-space: nowrap;
+}
+
+.table-scroll th:first-child,
+.table-scroll td:first-child {
+  text-align: left;
+}
+
+.table-scroll th {
+  font-weight: 500;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.change-up {
+  color: var(--up);
+}
+
+.change-down {
+  color: var(--down);
+}
+
+.change-flat {
+  color: var(--muted);
+}
