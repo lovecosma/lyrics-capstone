@@ -155,5 +155,21 @@
 - What it measures: how bad people feel things are.
 - In your window: it ranges from about 60 (2022, the inflation surge) to about 108 (2000).
 
-## Writing Queries for Dash App
+# 10/19/2026
 
+## Planning Charts
+- Checked each PLANNING.md hypothesis against the data and wrote up the results in CHART_PLANNING.md
+  - 9 findings, each with 1–2 planned charts that use only data already loaded
+  - Confirmed: explicit hits went up, Love is R&B's top topic, genre changes explain part of the topic shifts
+  - Rejected: Heartbreak was never the top topic until 2024; Pop isn't about Party or Lifestyle
+  - Self-Reflection's decline is explained entirely by rock shrinking
+
+## Building the Dash App
+- Genre View: line chart of genre share by year
+- Topic View: tabs for Main Topic (stacked chart) and Topic Mentioned (line chart), each with its own table
+  - Topic Mentioned counts a topic when it's the main topic or the model is at least 70% confident it's present
+
+## Styling
+- Report-style layout: neutral page background, each chart in its own white sheet with a source note underneath
+- Fonts modeled on billboard.com: Barlow Condensed headings (stand-in for Billboard's Crystal), Georgia body, DM Mono for chart and table numbers
+- Table changes colored green (up), red (down) and gray (under 3 points)

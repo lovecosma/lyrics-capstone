@@ -1,9 +1,7 @@
 import pandas as pd
 
 LYRICS_SCHEMA = "billboard_lyrics"
-# Must match the analysis version the ETL writes to lyrics_topic
 TOPIC_ANALYSIS_VERSION = "v1"
-# A secondary topic counts as present at or above this presence probability
 TOPIC_PRESENCE_THRESHOLD = 0.7
 
 

@@ -1,9 +1,10 @@
-@import url("https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Literata:opsz,wght@7..72,400;7..72,600&family=IBM+Plex+Mono:wght@400;500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=DM+Mono:wght@400;500&display=swap");
 
 :root {
-  --display: "Archivo", system-ui, sans-serif;
-  --body: "Literata", Georgia, serif;
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Free stand-in for Billboard's Crystal Condensed; body matches Billboard's Georgia */
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: Georgia, "Times New Roman", serif;
+  --mono: "DM Mono", ui-monospace, monospace;
   --muted: #5b6170;
   --paper: #f6f7f9;
   --sheet: #ffffff;
@@ -27,7 +28,19 @@ h1,
 h2,
 h3 {
   font-family: var(--display);
+  font-weight: 600;
+  letter-spacing: 0.01em;
   line-height: 1.1;
+}
+
+h1 {
+  font-weight: 800;
+  font-size: 3.4rem;
+  letter-spacing: 0;
+}
+
+h2 {
+  font-size: 1.9rem;
 }
 
 .container {
@@ -59,34 +72,6 @@ h3 {
   min-width: 0;
 }
 
-/* Three classes deep to outrank the default dcc.Tabs styles */
-.sheet .table-tabs .table-tab {
-  padding: 8px 14px;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  background: var(--paper);
-  border: 1px solid var(--rule);
-}
-
-.sheet .table-tabs .table-tab--selected {
-  color: var(--ink);
-  background: var(--sheet);
-  border-top: 2px solid var(--ink);
-  border-bottom-color: var(--sheet);
-}
-
-.table-tabs-content {
-  display: grid;
-  gap: 16px;
-  padding-top: 16px;
-}
-
-.table-tabs-content p {
-  margin: 0;
-}
-
 .chart-note {
   font-size: 0.85rem;
   color: var(--muted);
@@ -102,6 +87,16 @@ h3 {
   font-family: var(--mono);
   font-size: 0.82rem;
   font-variant-numeric: tabular-nums;
+}
+
+.table-scroll caption {
+  padding-bottom: 10px;
+  text-align: left;
+  font-family: var(--display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--ink);
 }
 
 .table-scroll th,
