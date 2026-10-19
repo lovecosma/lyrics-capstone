@@ -24,7 +24,8 @@ body {
 }
 
 h1,
-h2 {
+h2,
+h3 {
   font-family: var(--display);
   line-height: 1.1;
 }
@@ -56,6 +57,34 @@ h2 {
 .sheet > * {
   margin: 0;
   min-width: 0;
+}
+
+/* Three classes deep to outrank the default dcc.Tabs styles */
+.sheet .table-tabs .table-tab {
+  padding: 8px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+
+.sheet .table-tabs .table-tab--selected {
+  color: var(--ink);
+  background: var(--sheet);
+  border-top: 2px solid var(--ink);
+  border-bottom-color: var(--sheet);
+}
+
+.table-tabs-content {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.table-tabs-content p {
+  margin: 0;
 }
 
 .chart-note {
