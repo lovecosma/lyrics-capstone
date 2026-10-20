@@ -7,6 +7,7 @@ from layout import build_layout, category_colors
 from sqlalchemy import create_engine
 
 from data import (
+    EconomyRepository,
     EmotionRepository,
     GenreRepository,
     TopicRepository,
@@ -36,6 +37,7 @@ if __name__ == "__main__":
     vocabulary_repository = VocabularyRepository(engine)
     explicit_df = vocabulary_repository.get_explicit_year_rates()
     emotion_df = EmotionRepository(engine).get_year_shares()
+    economy_df = EconomyRepository(engine).get_year_averages()
     distinctive_df = vocabulary_repository.get_distinctive_terms()
     shared_words = vocabulary_repository.get_shared_top_words()
     callbacks.set_data(distinctive_df, category_colors(genre_df, "broad_genre"))
@@ -50,6 +52,7 @@ if __name__ == "__main__":
         shared_words,
         explicit_df,
         emotion_df,
+        economy_df,
     )
 
     app.run(host=HOST, port=PORT, debug=DEBUG)

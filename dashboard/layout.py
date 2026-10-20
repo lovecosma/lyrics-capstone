@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from dash import dcc, html
+from scipy import stats
 
 from data import (
     MIN_DISTINCTIVE_SHARE,
@@ -28,6 +29,8 @@ OTHER_GENRES_LABEL = "Other genres"
 OTHER_GENRES_COLOR = "#b8bdc7"
 SENTIMENTS = ("Positive", "Negative")
 DEFAULT_EMOTIONS = ("Positive", "Negative", "Joy", "Anger")
+HEADLINE_TOPIC = "Party & Celebration"
+UNEMPLOYMENT_INDICATOR = "Unemployment Rate"
 HEATMAP_COLOR_SCALE = [[0, "#e8908a"], [0.5, "#ffffff"], [1, "#7cc48c"]]
 PERIOD_LENGTH_YEARS = 8
 FLAT_CHANGE_POINTS = 3
@@ -66,6 +69,13 @@ NRC_EMOTION_SOURCE = {
     "details": "Computational Intelligence, 29(3), 436–465.",
     "url": "https://doi.org/10.1111/j.1467-8640.2012.00460.x",
 }
+BLS_UNEMPLOYMENT_SOURCE = {
+    "author": "U.S. Bureau of Labor Statistics",
+    "date": "2026",
+    "title": "Unemployment rate",
+    "details": "[UNRATE] [Data set]. Federal Reserve Bank of St. Louis.",
+    "url": "https://fred.stlouisfed.org/series/UNRATE",
+}
 BILLBOARD_SOURCE = {
     "author": "Billboard",
     "date": "2000–2024",
@@ -84,6 +94,7 @@ def build_layout(
     shared_words,
     explicit_df,
     emotion_df,
+    economy_df,
 ):
     return html.Div(
         [
@@ -95,6 +106,7 @@ def build_layout(
             build_topic_sheet(topic_df, topic_presence_df),
             build_explicit_sheet(explicit_df),
             build_emotion_sheet(emotion_df),
+            build_economy_sheet(economy_df, topic_df),
         ],
         className="container",
     )
@@ -365,6 +377,72 @@ def build_emotion_chart(emotion_df):
         font_family=CHART_FONT_FAMILY,
     )
     return figure
+
+
+def build_economy_sheet(economy_df, topic_df):
+    party_share = yearly_shares(topic_df, "main_topic").pivot(
+        index="year", columns="main_topic", values="entry_share"
+    )[HEADLINE_TOPIC]
+    unemployment = economy_df.pivot(index="year", columns="indicator", values="value").loc[
+        party_share.index, UNEMPLOYMENT_INDICATOR
+    ]
+    party_color = category_colors(topic_df, "main_topic")[HEADLINE_TOPIC]
+    return html.Section(
+        [
+            html.H2("Hard Times Produced Party Songs"),
+            html.P(
+                "When more Americans are out of work, more hits are mainly about partying. Each line "
+                "shows how far a year sits above or below its own 25-year average."
+            ),
+            dcc.Graph(
+                figure=build_unemployment_party_chart(unemployment, party_share, party_color)
+            ),
+            build_chart_note(
+                f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}; "
+                f"unemployment from {format_citation(BLS_UNEMPLOYMENT_SOURCE)} via FRED"
+            ),
+        ],
+        className="sheet",
+    )
+
+
+def build_unemployment_party_chart(unemployment, party_share, party_color):
+    correlation = stats.pearsonr(unemployment, party_share).statistic
+    figure = go.Figure(
+        [
+            go.Scatter(
+                x=party_share.index,
+                y=standardize(party_share),
+                customdata=party_share.values,
+                name=f"{HEADLINE_TOPIC} songs",
+                line={"color": party_color},
+                hovertemplate="%{customdata:.1f}% of entries",
+            ),
+            go.Scatter(
+                x=unemployment.index,
+                y=standardize(unemployment),
+                customdata=unemployment.values,
+                name="Unemployment rate",
+                line={"color": OTHER_GENRES_COLOR, "dash": "dot"},
+                hovertemplate="%{customdata:.1f}% unemployed",
+            ),
+        ]
+    )
+    figure.add_hline(y=0, line_color=OTHER_GENRES_COLOR, line_width=1)
+    figure.update_xaxes(title_text="Year")
+    figure.update_yaxes(title_text="Above or below the 25-year average (standard deviations)")
+    figure.update_layout(
+        title=build_chart_title(f"Party songs and unemployment move together (r = {correlation:.2f})"),
+        height=SHARE_CHART_HEIGHT,
+        hovermode="x unified",
+        font_family=CHART_FONT_FAMILY,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1, "x": 0},
+    )
+    return figure
+
+
+def standardize(series):
+    return (series - series.mean()) / series.std()
 
 
 def format_citation(source):

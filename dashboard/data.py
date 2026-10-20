@@ -290,3 +290,21 @@ class EmotionRepository:
                 "percent": PERCENT,
             },
         )
+
+
+class EconomyRepository:
+    def __init__(self, engine):
+        self._engine = engine
+
+    def get_year_averages(self):
+        sql = f"""
+    select
+      ei.display_name as indicator,
+      extract(year from eo.observation_date)::int as year,
+      avg(eo.value)::float as value
+    from {LYRICS_SCHEMA}.economic_observation eo
+    join {LYRICS_SCHEMA}.economic_indicator ei
+      on ei.economic_indicator_id = eo.economic_indicator_id
+    group by ei.display_name, extract(year from eo.observation_date)
+    """
+        return pd.read_sql(sql, self._engine)
