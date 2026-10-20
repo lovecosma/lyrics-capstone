@@ -173,3 +173,18 @@
 - Report-style layout: neutral page background, each chart in its own white sheet with a source note underneath
 - Fonts modeled on billboard.com: Barlow Condensed headings (stand-in for Billboard's Crystal), Georgia body, DM Mono for chart and table numbers
 - Table changes colored green (up), red (down) and gray (under 3 points)
+
+# 10/20/2026
+
+## New Sheets
+- Genre vs topic heatmap: each genre's share of a main topic vs. the average across genres 
+- Vocabulary Charts - the words every genre shares, each genre's most distinctive words, and the biggest changes in word use
+  - Tabs for genres and topics, with dropdowns to pick a genre or topic
+- Explicit lyrics: explicit words per 1,000 lyric words by year, with tabs breaking it down by genre and by topic
+- Emotions: NRC emotion word shares by year 
+- Sound: Spotify song length and audio features
+- Economy: unemployment rate vs. Party & Celebration songs, both standardized on one axis
+
+## Database
+- Moved the profanity word list into the database
+- Added SQL views (chart entries, genre per track, strong profanity, lyric words, track topics) to simplify the dashboard queries
