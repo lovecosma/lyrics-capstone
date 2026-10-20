@@ -17,6 +17,7 @@ from transformers import (
     EmotionLexiconTransformer,
     EmotionTransformer,
     GenreMappingTransformer,
+    ProfanityWordTransformer,
     TopicsTransformer,
     TrackMerger,
     TrackTransformer,
@@ -39,6 +40,7 @@ LYRICS_NGRAM_METRIC_TABLE = "lyrics_ngram_metric"
 EMOTION_TABLE = "emotion"
 WORD_EMOTION_TABLE = "word_emotion"
 WORD_VAD_TABLE = "word_vad"
+PROFANITY_WORD_TABLE = "profanity_word"
 ECONOMIC_INDICATOR_TABLE = "economic_indicator"
 ECONOMIC_OBSERVATION_TABLE = "economic_observation"
 
@@ -357,6 +359,25 @@ class EmotionLexiconProcessor:
         )
         self._loader.load_to_db(word_emotion_df, WORD_EMOTION_TABLE)
         logger.info("Completed emotion lexicon ETL")
+
+
+class ProfanityProcessor:
+    def __init__(self, extractor, loader, profanity_csv_path):
+        self._extractor = extractor
+        self._loader = loader
+        self._profanity_csv_path = profanity_csv_path
+
+    def process(self):
+        logger.info("Starting profanity ETL")
+        profanity_df = ProfanityWordTransformer().transform(
+            self._extractor.extract_from_csv(self._profanity_csv_path)
+        )
+        word_column = ProfanityWordTransformer.WORD_COLUMN
+        is_loaded = profanity_df[word_column].isin(
+            self._extractor.extract_from_db(PROFANITY_WORD_TABLE)[word_column]
+        )
+        self._loader.load_to_db(profanity_df[~is_loaded], PROFANITY_WORD_TABLE)
+        logger.info("Completed profanity ETL")
 
 
 class EconomicIndicatorProcessor:

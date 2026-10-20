@@ -16,6 +16,7 @@ from etl import (
     GenreMappingProcessor,
     Loader,
     NrcLexiconExtractor,
+    ProfanityProcessor,
     TopicProcessor,
     TrackProcessor,
 )
@@ -44,6 +45,7 @@ GENRE_MAPPING_PATH = "data/genre_mapping.csv"
 LYRICS_TOPIC_SNAPSHOT_PATH = "data/typesafe_lyrics_topics.csv"
 EMOTION_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/emotion-lexicon.txt"
 VAD_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/vad-lexicon.txt"
+PROFANITY_PATH = "data/profanity_en.csv"
 ECONOMIC_INDICATOR_PATH = "data/economic_indicators.csv"
 FRED_PATH = "data/fred"
 NON_CONTENT_WORD_PATHS = (
@@ -90,6 +92,7 @@ def run_etl():
                 EMOTION_LEXICON_PATH,
                 VAD_LEXICON_PATH,
             ),
+            ProfanityProcessor(Extractor(conn), loader, PROFANITY_PATH),
             EconomicIndicatorProcessor(
                 FredExtractor(conn), loader, ECONOMIC_INDICATOR_PATH, FRED_PATH
             ),

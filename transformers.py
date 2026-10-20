@@ -566,6 +566,45 @@ class WordEmotionTransformer:
         return word_emotion_df
 
 
+class ProfanityWordTransformer:
+    TEXT_COLUMN = "text"
+    WORD_COLUMN = "word"
+    CATEGORY_SOURCE_COLUMN = "category_1"
+    CATEGORY_COLUMN = "category"
+    PROFANITY_COLUMNS = (
+        WORD_COLUMN,
+        "canonical_form_1",
+        "canonical_form_2",
+        "canonical_form_3",
+        CATEGORY_COLUMN,
+        "severity_rating",
+        "severity_description",
+    )
+
+    def transform(self, profanity_df):
+        profanity_df = profanity_df.rename(
+            columns={
+                self.TEXT_COLUMN: self.WORD_COLUMN,
+                self.CATEGORY_SOURCE_COLUMN: self.CATEGORY_COLUMN,
+            }
+        )
+        # Lowercased only; lyric words are lowercase, and stripping punctuation would merge
+        # spellings like "a_s_s" into ordinary words
+        profanity_df = (
+            profanity_df.assign(
+                **{
+                    self.WORD_COLUMN: profanity_df[self.WORD_COLUMN]
+                    .str.lower()
+                    .str.strip()
+                }
+            )
+            .dropna(subset=[self.WORD_COLUMN])
+            .drop_duplicates(subset=[self.WORD_COLUMN])[list(self.PROFANITY_COLUMNS)]
+        )
+        logger.info("Built %d profanity words", len(profanity_df))
+        return profanity_df
+
+
 class ReferenceTableTransformer:
     KEY_COLUMN = None
     COLUMNS = ()

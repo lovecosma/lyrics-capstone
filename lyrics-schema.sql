@@ -145,6 +145,16 @@ create table word_vad (
   dominance decimal(4, 3) not null
 );
 
+create table profanity_word (
+  word varchar(50) primary key,
+  canonical_form_1 varchar(50) not null,
+  canonical_form_2 varchar(50) null,
+  canonical_form_3 varchar(50) null,
+  category varchar(50) not null,
+  severity_rating decimal(3, 2) not null,
+  severity_description varchar(20) not null
+);
+
 create table economic_indicator (
   economic_indicator_id serial primary key,
   code varchar(20) not null unique,
