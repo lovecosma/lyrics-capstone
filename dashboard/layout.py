@@ -7,12 +7,12 @@ from scipy import stats
 
 from data import (
     MIN_DISTINCTIVE_SHARE,
-    SOUND_LAST_YEAR,
-    WORDS_PER_RATE,
     PERCENT,
     PROFANITY_TERM,
+    SOUND_LAST_YEAR,
     TOPIC_PRESENCE_THRESHOLD,
     VOCABULARY_GENRES,
+    WORDS_PER_RATE,
 )
 
 SHARE_CHART_HEIGHT = 520
@@ -25,7 +25,6 @@ SOUND_FEATURE_LABELS = {
 }
 DEFAULT_SOUND_FEATURES = ("valence", "energy", "acousticness", "danceability")
 DUMBBELL_MARKER_SIZE = 14
-# Words shown at each end of the word change chart
 WORD_CHANGE_COUNT = 8
 RISE_COLOR = "#15803d"
 FALL_COLOR = "#b91c1c"
@@ -40,7 +39,6 @@ BUBBLE_AXIS_ROOM = 1.15
 BUBBLE_FRAME_MS = 1000
 BUBBLE_TRANSITION_MS = 800
 CATEGORY_COLORS = px.colors.qualitative.Plotly
-GENRE_TOPIC_CHART_ID = "genre-topic-chart"
 VOCABULARY_CHART_ID = "vocabulary-chart"
 VOCABULARY_GENRE_PICKER_ID = "vocabulary-genre-picker"
 VOCABULARY_SHEET_CHART_HEIGHT = 460
@@ -130,16 +128,11 @@ def build_layout(
         [
             build_header(),
             build_genre_sheet(genre_df),
+            build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df),
             build_vocabulary_sheet(
-                genre_df,
-                topic_df,
-                genre_topic_share_df,
-                distinctive_df,
-                shared_words,
-                word_year_df,
+                genre_df, distinctive_df, shared_words, word_year_df
             ),
             build_explicit_sheet(explicit_df, explicit_breakdown_df),
-            build_topic_sheet(topic_df, topic_presence_df),
             build_emotion_sheet(emotion_df),
             build_sound_sheet(sound_df),
             build_economy_sheet(economy_df, topic_df),
@@ -196,22 +189,10 @@ def build_genre_sheet(genre_df):
     )
 
 
-def build_vocabulary_sheet(
-    genre_df, topic_df, genre_topic_share_df, distinctive_df, shared_words, word_year_df
-):
+def build_vocabulary_sheet(genre_df, distinctive_df, shared_words, word_year_df):
     return html.Section(
         [
-            html.H2("Every Genre Tells a Different Story"),
-            html.P(
-                "Genres differ in what they sing about and in how they say it. Each cell compares "
-                "a genre's share of songs with a main topic against the average across all genres: "
-                "green means the genre sings about it more than average, red means less, in "
-                "percentage points."
-            ),
-            dcc.Graph(
-                id=GENRE_TOPIC_CHART_ID,
-                figure=build_genre_topic_heatmap(genre_topic_share_df, topic_df),
-            ),
+            html.H2("Shared Words, Shifting Slang"),
             html.P(
                 f"Every genre's most used words are the same: {', '.join(shared_words)}. What sets "
                 "genres apart are the words below: used in at least "
@@ -241,23 +222,22 @@ def build_vocabulary_sheet(
             ),
             html.P(
                 "Vocabulary also changed over time. Each bar is the change in the share of songs "
-                "using a word between the first and last eight years. \"Girl\" fell from 43% of "
-                "songs to 28%, \"love\" from 57% to 46% and \"club\" from 15% to 5%. Rap slang "
-                "rose: \"tryna\" from 11% to 21% and \"lil\" from 8% to 14%. The biggest rise was "
+                'using a word between the first and last eight years. "Girl" fell from 43% of '
+                'songs to 28%, "love" from 57% to 46% and "club" from 15% to 5%. Rap slang '
+                'rose: "tryna" from 11% to 21% and "lil" from 8% to 14%. The biggest rise was '
                 "strong profanity, from 35% of songs to 49%."
             ),
             dcc.Graph(figure=build_word_change_chart(word_year_df)),
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
-                f"{format_citation(TYPESAFE_SOURCE)}"
+                f"and {format_citation(MELO_LYRICS_SOURCE)}"
             ),
         ],
         className="sheet",
     )
 
 
-def build_topic_sheet(topic_df, topic_presence_df):
+def build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df):
     topic_year_totals = topic_df.groupby("year")["entry_count"].sum()
     return html.Section(
         [
@@ -266,10 +246,8 @@ def build_topic_sheet(topic_df, topic_presence_df):
                 "Each song's lyrics are assigned one main topic by TypeSafe's Jev model. A topic's "
                 "percentage for a year is the number of that year's songs with that main topic "
                 "divided by the number of songs on that year's chart. Most songs also touch on other "
-                "topics: a song mentions a topic when it's the main topic or when the model is at "
-                f"least {TOPIC_PRESENCE_THRESHOLD:.0%} confident the topic is present. In the chart, "
-                "each bubble is a topic: further right means it's the main topic of more songs, and "
-                "higher means more songs mention it."
+                "topics. A song mentions a topic when it's the main topic or when the model is at "
+                f"least {TOPIC_PRESENCE_THRESHOLD:.0%} confident the topic is present."
             ),
             dcc.Graph(
                 figure=build_topic_movement_chart(
@@ -289,9 +267,16 @@ def build_topic_sheet(topic_df, topic_presence_df):
             build_share_table(
                 topic_df, "main_topic", "Topic", "Main topic share by period"
             ),
+            html.P(
+                "Genres differ in what they sing about. Each cell compares a genre's share of songs "
+                "with a main topic against the average across all genres with that main topic. "
+                "The rise of Lifestyle & Success comes from hip-hop: it sits 26 points above the "
+                "average, and no other genre is more than 4 points above."
+            ),
+            dcc.Graph(figure=build_genre_topic_heatmap(genre_topic_share_df, topic_df)),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)} and "
-                f"{format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
+                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
                 f"{format_citation(TYPESAFE_SOURCE)}"
             ),
         ],
@@ -304,16 +289,16 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
         [
             html.H2("Explicit Lyrics Nearly Doubled"),
             html.P(
-                f"The line shows how many explicit words appear per {WORDS_PER_RATE:,} lyric words "
-                "each year. Explicit words are the strong profanity and slurs grouped on the "
-                'vocabulary chart above. Common filler words like "the" and "you" aren\'t '
-                "counted as lyric words."
+                "That profanity rise was the biggest change in vocabulary. The line shows how many "
+                f"explicit words appear per {WORDS_PER_RATE:,} lyric words each year. Explicit words "
+                "are the strong profanity and slurs grouped on the vocabulary charts above. "
+                'Common filler words like "the" and "you" aren\'t counted as lyric words.'
             ),
             dcc.Graph(figure=build_explicit_chart(explicit_df)),
             html.P(
                 f"Explicit words nearly doubled, from 17.2 per {WORDS_PER_RATE:,} lyric words in "
                 "2000–2007 to 33.8 in 2017–2024. They held steady through 2008–2016, then jumped in "
-                "2017. The share of songs using at least one rose from 35% to 49%."
+                "2017."
             ),
             dcc.Tabs(
                 [
@@ -769,13 +754,9 @@ def build_unemployment_party_chart(unemployment, party_share, party_color):
     )
     figure.add_hline(y=0, line_color=OTHER_GENRES_COLOR, line_width=1)
     figure.update_xaxes(title_text="Year")
-    figure.update_yaxes(
-        title_text="Above or below the 25-year average (standard deviations)"
-    )
+    figure.update_yaxes(title_text="STD")
     figure.update_layout(
-        title=build_chart_title(
-            f"Party songs and unemployment move together (r = {correlation:.2f})"
-        ),
+        title=build_chart_title("Party Songs vs Unemployment"),
         height=SHARE_CHART_HEIGHT,
         hovermode="x unified",
         font_family=CHART_FONT_FAMILY,
@@ -924,7 +905,11 @@ def build_word_change_chart(word_year_df):
     def period_shares(period):
         period_df = word_year_df[word_year_df["year"].between(*period)]
         period_entry_count = period_df.drop_duplicates("year")["year_entry_count"].sum()
-        return period_df.groupby("word")["entry_count"].sum() / period_entry_count * PERCENT
+        return (
+            period_df.groupby("word")["entry_count"].sum()
+            / period_entry_count
+            * PERCENT
+        )
 
     shares = pd.DataFrame(
         {"early": period_shares(early_years), "late": period_shares(late_years)}
@@ -941,7 +926,9 @@ def build_word_change_chart(word_year_df):
             x=biggest_changes["change"],
             y=biggest_changes.index,
             orientation="h",
-            marker_color=np.where(biggest_changes["change"] > 0, RISE_COLOR, FALL_COLOR),
+            marker_color=np.where(
+                biggest_changes["change"] > 0, RISE_COLOR, FALL_COLOR
+            ),
             customdata=biggest_changes[["early", "late"]].values,
             hovertemplate=(
                 "%{y}: %{customdata[0]:.0f}% → %{customdata[1]:.0f}% of songs "
@@ -999,7 +986,7 @@ def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
             zmid=0,
             zmin=-largest_difference,
             zmax=largest_difference,
-            colorbar={"title": {"text": "pts vs. avg"}},
+            colorbar={"title": {"text": "Points above or<br>below the average<br>across genres"}},
             hovertemplate=(
                 "%{y} (%{customdata[2]:.0f} songs)<br>%{x}: %{customdata[0]:.1f}% of songs"
                 "<br>Average across genres: %{customdata[1]:.1f}%<extra></extra>"
@@ -1054,7 +1041,6 @@ def build_vocabulary_chart(distinctive_df, genre, genre_color):
     return figure
 
 
-# The first and last PERIOD_LENGTH_YEARS years, and the years between
 def comparison_periods(years):
     first_year, last_year = years.min(), years.max()
     early_years = (first_year, first_year + PERIOD_LENGTH_YEARS - 1)

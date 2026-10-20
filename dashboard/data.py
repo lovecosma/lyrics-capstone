@@ -394,9 +394,7 @@ class EconomyRepository:
 class SoundRepository:
     def __init__(self, engine):
         self._engine = engine
-
-    # Yearly averages of Spotify audio features over the entries Spotify matched, with the
-    # share matched so charts can show coverage
+        
     def get_year_averages(self):
         sql = f"""
     select
