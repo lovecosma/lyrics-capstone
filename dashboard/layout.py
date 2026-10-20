@@ -30,7 +30,7 @@ RISE_COLOR = "#15803d"
 FALL_COLOR = "#b91c1c"
 ALL_GENRES_LABEL = "All genres"
 ALL_SONGS_LABEL = "All songs"
-EXPLICIT_TOPIC_COUNT = 7
+MAIN_TOPIC_COUNT = 7
 SONG_LENGTH_LABEL = "Song length (minutes)"
 SONG_LENGTH_AXIS_PADDING_MINUTES = 0.25
 SOUND_FLAT_CHANGE_PERCENT = 5
@@ -39,11 +39,18 @@ BUBBLE_AXIS_ROOM = 1.15
 BUBBLE_FRAME_MS = 1000
 BUBBLE_TRANSITION_MS = 800
 CATEGORY_COLORS = px.colors.qualitative.Plotly
-VOCABULARY_CHART_ID = "vocabulary-chart"
-VOCABULARY_GENRE_PICKER_ID = "vocabulary-genre-picker"
+GENRE_VOCABULARY_CHART_ID = "genre-vocabulary-chart"
+GENRE_VOCABULARY_PICKER_ID = "genre-vocabulary-picker"
+GENRE_WORD_CHANGE_CHART_ID = "genre-word-change-chart"
+GENRE_WORD_CHANGE_PICKER_ID = "genre-word-change-picker"
+TOPIC_VOCABULARY_CHART_ID = "topic-vocabulary-chart"
+TOPIC_VOCABULARY_PICKER_ID = "topic-vocabulary-picker"
+TOPIC_WORD_CHANGE_CHART_ID = "topic-word-change-chart"
+TOPIC_WORD_CHANGE_PICKER_ID = "topic-word-change-picker"
 VOCABULARY_SHEET_CHART_HEIGHT = 460
 DEFAULT_VOCABULARY_GENRE = "Country/Folk"
 OTHER_GENRES_LABEL = "Other genres"
+OTHER_TOPICS_LABEL = "Other topics"
 OTHER_GENRES_COLOR = "#b8bdc7"
 SENTIMENTS = ("Positive", "Negative")
 DEFAULT_EMOTIONS = ("Positive", "Negative", "Joy", "Anger")
@@ -115,7 +122,8 @@ def build_layout(
     topic_df,
     topic_presence_df,
     genre_topic_share_df,
-    distinctive_df,
+    genre_distinctive_df,
+    topic_distinctive_df,
     shared_words,
     word_year_df,
     explicit_df,
@@ -130,7 +138,12 @@ def build_layout(
             build_genre_sheet(genre_df),
             build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df),
             build_vocabulary_sheet(
-                genre_df, distinctive_df, shared_words, word_year_df
+                genre_df,
+                topic_df,
+                genre_distinctive_df,
+                topic_distinctive_df,
+                shared_words,
+                word_year_df,
             ),
             build_explicit_sheet(explicit_df, explicit_breakdown_df),
             build_emotion_sheet(emotion_df),
@@ -173,8 +186,8 @@ def build_genre_sheet(genre_df):
                 )
             ),
             html.P(
-                "Country/Folk saw the largest increase of +13.6 points. R&B/Soul had the largest decrease of -15.7 points. "
-                "Rock/Alternative saw the next largest decrease of -10.7 points. Hip-Hop/Rap had the next largest "
+                "Country/Folk saw the largest increase of +13.0 points. R&B/Soul had the largest decrease of -15.6 points. "
+                "Rock/Alternative saw the next largest decrease of -10.3 points. Hip-Hop/Rap had the next largest "
                 "increase of +7.3 points.",
             ),
             build_share_table(
@@ -189,51 +202,139 @@ def build_genre_sheet(genre_df):
     )
 
 
-def build_vocabulary_sheet(genre_df, distinctive_df, shared_words, word_year_df):
+def build_vocabulary_sheet(
+    genre_df,
+    topic_df,
+    genre_distinctive_df,
+    topic_distinctive_df,
+    shared_words,
+    word_year_df,
+):
+    topics = main_topics(topic_df)
     return html.Section(
         [
             html.H2("Shared Words, Shifting Slang"),
-            html.P(
-                f"Every genre's most used words are the same: {', '.join(shared_words)}. What sets "
-                "genres apart are the words below: used in at least "
-                f"{MIN_DISTINCTIVE_SHARE}% of a genre's songs and far more often than in other "
-                f"genres' songs. Swear words and slurs are grouped as {PROFANITY_TERM}."
-            ),
-            html.Label(
+            dcc.Tabs(
                 [
-                    html.Span("Genre", className="genre-picker-label"),
-                    dcc.Dropdown(
-                        id=VOCABULARY_GENRE_PICKER_ID,
-                        options=list(VOCABULARY_GENRES),
-                        value=DEFAULT_VOCABULARY_GENRE,
-                        clearable=False,
-                        searchable=False,
+                    dcc.Tab(
+                        [
+                            html.P(
+                                f"Every genre's most used words are the same: {', '.join(shared_words)}. "
+                                "What sets genres apart are the words below: used in at least "
+                                f"{MIN_DISTINCTIVE_SHARE}% of a genre's songs and far more often than in "
+                                f"other genres' songs. Swear words and slurs are grouped as {PROFANITY_TERM}."
+                            ),
+                            build_picker(
+                                GENRE_VOCABULARY_PICKER_ID,
+                                "Genre",
+                                list(VOCABULARY_GENRES),
+                                DEFAULT_VOCABULARY_GENRE,
+                            ),
+                            dcc.Graph(
+                                id=GENRE_VOCABULARY_CHART_ID,
+                                figure=build_vocabulary_chart(
+                                    genre_distinctive_df,
+                                    DEFAULT_VOCABULARY_GENRE,
+                                    category_colors(genre_df, "broad_genre")[
+                                        DEFAULT_VOCABULARY_GENRE
+                                    ],
+                                    OTHER_GENRES_LABEL,
+                                ),
+                            ),
+                            html.P(
+                                "Vocabulary also changed over time. Each bar is the change in the share "
+                                'of songs using a word between the first and last eight years. "Girl" '
+                                'fell from 43% of songs to 28%, "love" from 57% to 46% and "club" from '
+                                '15% to 5%. Rap slang rose: "tryna" from 11% to 21% and "lil" from 8% to '
+                                "14%. The biggest rise was strong profanity, from 35% of songs to 49%."
+                            ),
+                            build_picker(
+                                GENRE_WORD_CHANGE_PICKER_ID,
+                                "Genre",
+                                [ALL_GENRES_LABEL, *VOCABULARY_GENRES],
+                                ALL_GENRES_LABEL,
+                            ),
+                            dcc.Graph(
+                                id=GENRE_WORD_CHANGE_CHART_ID,
+                                figure=build_word_change_chart(
+                                    word_year_df, "broad_genre", ALL_GENRES_LABEL
+                                ),
+                            ),
+                        ],
+                        label="By genre",
+                        className="sheet-tab",
+                        selected_className="sheet-tab--selected",
+                    ),
+                    dcc.Tab(
+                        [
+                            html.P(
+                                "Topics have their own vocabulary too. The words below are used in at "
+                                f"least {MIN_DISTINCTIVE_SHARE}% of the songs with a main topic and far "
+                                "more often than in songs with other main topics."
+                            ),
+                            build_picker(
+                                TOPIC_VOCABULARY_PICKER_ID,
+                                "Main topic",
+                                topics,
+                                topics[0],
+                            ),
+                            dcc.Graph(
+                                id=TOPIC_VOCABULARY_CHART_ID,
+                                figure=build_vocabulary_chart(
+                                    topic_distinctive_df,
+                                    topics[0],
+                                    category_colors(topic_df, "main_topic")[topics[0]],
+                                    OTHER_TOPICS_LABEL,
+                                ),
+                            ),
+                            html.P(
+                                "Each bar is the change in the share of songs with a main topic using a "
+                                "word between the first and last eight years."
+                            ),
+                            build_picker(
+                                TOPIC_WORD_CHANGE_PICKER_ID,
+                                "Main topic",
+                                [ALL_SONGS_LABEL, *topics],
+                                ALL_SONGS_LABEL,
+                            ),
+                            dcc.Graph(
+                                id=TOPIC_WORD_CHANGE_CHART_ID,
+                                figure=build_word_change_chart(
+                                    word_year_df, "main_topic", ALL_SONGS_LABEL
+                                ),
+                            ),
+                        ],
+                        label="By topic",
+                        className="sheet-tab",
+                        selected_className="sheet-tab--selected",
                     ),
                 ],
-                className="genre-picker",
+                className="sheet-tabs",
+                content_className="sheet-tabs-content",
             ),
-            dcc.Graph(
-                id=VOCABULARY_CHART_ID,
-                figure=build_vocabulary_chart(
-                    distinctive_df,
-                    DEFAULT_VOCABULARY_GENRE,
-                    category_colors(genre_df, "broad_genre")[DEFAULT_VOCABULARY_GENRE],
-                ),
-            ),
-            html.P(
-                "Vocabulary also changed over time. Each bar is the change in the share of songs "
-                'using a word between the first and last eight years. "Girl" fell from 43% of '
-                'songs to 28%, "love" from 57% to 46% and "club" from 15% to 5%. Rap slang '
-                'rose: "tryna" from 11% to 21% and "lil" from 8% to 14%. The biggest rise was '
-                "strong profanity, from 35% of songs to 49%."
-            ),
-            dcc.Graph(figure=build_word_change_chart(word_year_df)),
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}"
+                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(TYPESAFE_SOURCE)}"
             ),
         ],
         className="sheet",
+    )
+
+
+def build_picker(picker_id, label, options, value):
+    return html.Label(
+        [
+            html.Span(label, className="genre-picker-label"),
+            dcc.Dropdown(
+                id=picker_id,
+                options=options,
+                value=value,
+                clearable=False,
+                searchable=False,
+            ),
+        ],
+        className="genre-picker",
     )
 
 
@@ -314,9 +415,9 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                             ),
                             html.P(
                                 "The rise wasn't just hip-hop growing. Pop songs with explicit words "
-                                "more than doubled (15% to 34%), R&B's more than doubled (25% to "
-                                "57%) and country's rose from 2% to 12%, while hip-hop, already at "
-                                "84%, reached 94%."
+                                "more than doubled (16% to 34%), R&B's more than doubled (26% to "
+                                "58%) and country's rose from 2% to 12%, while hip-hop, already at "
+                                "84%, reached 93%."
                             ),
                             build_explicit_breakdown_table(
                                 explicit_breakdown_df,
@@ -337,7 +438,7 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                                 figure=build_explicit_breakdown_chart(
                                     explicit_breakdown_df,
                                     "main_topic",
-                                    explicit_topics(explicit_breakdown_df),
+                                    main_topics(explicit_breakdown_df),
                                     "Songs with explicit words by main topic",
                                 )
                             ),
@@ -350,7 +451,7 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                             build_explicit_breakdown_table(
                                 explicit_breakdown_df,
                                 "main_topic",
-                                explicit_topics(explicit_breakdown_df),
+                                main_topics(explicit_breakdown_df),
                                 "Main topic",
                                 ALL_SONGS_LABEL,
                                 "Songs with explicit words by main topic and period",
@@ -487,11 +588,11 @@ def build_explicit_breakdown_table(
     )
 
 
-def explicit_topics(breakdown_df):
+def main_topics(year_df):
     return list(
-        breakdown_df.groupby("main_topic")["entry_count"]
+        year_df.groupby("main_topic")["entry_count"]
         .sum()
-        .nlargest(EXPLICIT_TOPIC_COUNT)
+        .nlargest(MAIN_TOPIC_COUNT)
         .index
     )
 
@@ -612,9 +713,9 @@ def build_sound_sheet(sound_df):
             dcc.Graph(figure=build_audio_feature_chart(sound_df)),
             html.P(
                 "Hits got shorter, from 4.08 minutes on average in 2000–2007 to 3.45 minutes in "
-                "2015–2022 (-15%). They also sound sadder and calmer: valence fell from 0.59 to "
-                "0.50 (-15%) and energy from 0.70 to 0.63 (-9%), while acousticness rose from 0.14 "
-                "to 0.19 (+31%). Danceability barely moved (+3%), so hits stayed just as danceable."
+                "2015–2022 (-15%). They also sound sadder and calmer: valence fell from 0.58 to "
+                "0.50 (-15%) and energy from 0.70 to 0.63 (-9%), while acousticness rose from 0.15 "
+                "to 0.19 (+29%). Danceability barely moved (+3%), so hits stayed just as danceable."
             ),
             build_sound_table(sound_df),
             build_chart_note(
@@ -899,12 +1000,16 @@ def category_colors(year_df, category):
     }
 
 
-def build_word_change_chart(word_year_df):
+def build_word_change_chart(word_year_df, category, value):
     early_years, _, late_years = comparison_periods(word_year_df["year"])
+    if value not in (ALL_GENRES_LABEL, ALL_SONGS_LABEL):
+        word_year_df = word_year_df[word_year_df[category] == value]
 
     def period_shares(period):
         period_df = word_year_df[word_year_df["year"].between(*period)]
-        period_entry_count = period_df.drop_duplicates("year")["year_entry_count"].sum()
+        period_entry_count = period_df.drop_duplicates(
+            ["year", "broad_genre", "main_topic"]
+        )["year_entry_count"].sum()
         return (
             period_df.groupby("word")["entry_count"].sum()
             / period_entry_count
@@ -939,7 +1044,7 @@ def build_word_change_chart(word_year_df):
     figure.update_xaxes(title_text="Change in share of songs using the word (pts)")
     figure.update_layout(
         title=build_chart_title(
-            "Biggest changes in word use, "
+            f"Biggest changes in word use in {value}, "
             f"{format_period(*early_years)} vs. {format_period(*late_years)}"
         ),
         height=VOCABULARY_SHEET_CHART_HEIGHT,
@@ -986,7 +1091,11 @@ def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
             zmid=0,
             zmin=-largest_difference,
             zmax=largest_difference,
-            colorbar={"title": {"text": "Points above or<br>below the average<br>across genres"}},
+            colorbar={
+                "title": {
+                    "text": "Points above or<br>below the average<br>across genres"
+                }
+            },
             hovertemplate=(
                 "%{y} (%{customdata[2]:.0f} songs)<br>%{x}: %{customdata[0]:.1f}% of songs"
                 "<br>Average across genres: %{customdata[1]:.1f}%<extra></extra>"
@@ -1008,14 +1117,14 @@ def format_point_difference(points):
     return f"{points:+d}" if points else "0"
 
 
-def build_vocabulary_chart(distinctive_df, genre, genre_color):
-    genre_terms = distinctive_df[distinctive_df["broad_genre"] == genre]
-    comparison_df = genre_terms.melt(
+def build_vocabulary_chart(distinctive_df, category, category_color, other_label):
+    category_terms = distinctive_df[distinctive_df["category"] == category]
+    comparison_df = category_terms.melt(
         id_vars="ngram",
-        value_vars=["genre_share", "other_share"],
+        value_vars=["category_share", "other_share"],
         var_name="group",
         value_name="song_share",
-    ).replace({"group": {"genre_share": genre, "other_share": OTHER_GENRES_LABEL}})
+    ).replace({"group": {"category_share": category, "other_share": other_label}})
     figure = px.bar(
         comparison_df,
         x="song_share",
@@ -1023,10 +1132,10 @@ def build_vocabulary_chart(distinctive_df, genre, genre_color):
         color="group",
         orientation="h",
         barmode="group",
-        color_discrete_map={genre: genre_color, OTHER_GENRES_LABEL: OTHER_GENRES_COLOR},
+        color_discrete_map={category: category_color, other_label: OTHER_GENRES_COLOR},
         category_orders={
-            "ngram": list(genre_terms["ngram"]),
-            "group": [genre, OTHER_GENRES_LABEL],
+            "ngram": list(category_terms["ngram"]),
+            "group": [category, other_label],
         },
         labels={"song_share": "% of songs using it", "ngram": "", "group": ""},
         height=VOCABULARY_SHEET_CHART_HEIGHT,
@@ -1035,7 +1144,7 @@ def build_vocabulary_chart(distinctive_df, genre, genre_color):
         hovertemplate="%{y}: %{x:.0f}% of songs<extra>%{fullData.name}</extra>"
     )
     figure.update_layout(
-        title=build_chart_title(f"Most distinctive words: {genre}"),
+        title=build_chart_title(f"Most distinctive words: {category}"),
         font_family=CHART_FONT_FAMILY,
     )
     return figure

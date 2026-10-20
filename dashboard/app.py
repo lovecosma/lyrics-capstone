@@ -3,7 +3,7 @@ import os
 import callbacks
 from dash import Dash
 from dynaconf import Dynaconf
-from layout import build_layout, category_colors
+from layout import build_layout, category_colors, main_topics
 from sqlalchemy import create_engine
 
 from data import (
@@ -41,10 +41,19 @@ if __name__ == "__main__":
     emotion_df = EmotionRepository(engine).get_year_shares()
     sound_df = SoundRepository(engine).get_year_averages()
     economy_df = EconomyRepository(engine).get_year_averages()
-    distinctive_df = vocabulary_repository.get_distinctive_terms()
+    genre_distinctive_df = vocabulary_repository.get_genre_distinctive_terms()
+    topic_distinctive_df = vocabulary_repository.get_topic_distinctive_terms(
+        main_topics(topic_df)
+    )
     shared_words = vocabulary_repository.get_shared_top_words()
     word_year_df = vocabulary_repository.get_word_year_counts()
-    callbacks.set_data(distinctive_df, category_colors(genre_df, "broad_genre"))
+    callbacks.set_data(
+        genre_distinctive_df,
+        topic_distinctive_df,
+        category_colors(genre_df, "broad_genre"),
+        category_colors(topic_df, "main_topic"),
+        word_year_df,
+    )
 
     app = Dash(title="Hot 100 Lyrics")
     app.layout = build_layout(
@@ -52,7 +61,8 @@ if __name__ == "__main__":
         topic_df,
         topic_presence_df,
         genre_topic_share_df,
-        distinctive_df,
+        genre_distinctive_df,
+        topic_distinctive_df,
         shared_words,
         word_year_df,
         explicit_df,

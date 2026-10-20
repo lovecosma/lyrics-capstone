@@ -39,7 +39,14 @@ class TrackMerger:
         r"|\b(?:rock|pop|country|spanish) version\b",
         re.IGNORECASE,
     )
-    BILLBOARD_ARTIST_ALIASES = MappingProxyType({"Pink": "P!nk"})
+    BILLBOARD_ARTIST_ALIASES = MappingProxyType(
+        {
+            "Pink": "P!nk",
+            "Dixie Chicks": "The Chicks",
+            "Machine Gun Kelly": "mgk",
+            "Machine Gun Kelly & Camila Cabello": "mgk & Camila Cabello",
+        }
+    )
     # Splits a credit like "Drake, Kanye West & Eminem" so it matches on "Drake"
     LEAD_ARTIST_SEPARATOR = re.compile(
         r"\s*(?:,|&|\b(?:featuring|with|and|x)\b|\b(?:feat|ft)\.)\s*", re.IGNORECASE

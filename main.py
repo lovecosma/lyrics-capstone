@@ -54,7 +54,6 @@ NON_CONTENT_WORD_PATHS = (
     "data/filler_words.txt",
 )
 LYRICS_ANALYSIS_BATCH_SIZE = 500
-# About 2.5 minutes of iTunes requests per committed batch
 GENRE_SEARCH_BATCH_SIZE = 50
 GENRE_SNAPSHOT_BATCH_SIZE = 500
 LOG_FORMAT = "%(asctime)s %(levelname)s %(name)s: %(message)s"
