@@ -88,6 +88,34 @@ h2 {
   color: var(--muted);
 }
 
+/* Three classes deep to outrank the default dcc.Tabs styles */
+.sheet .sheet-tabs .sheet-tab {
+  padding: 8px 14px;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  background: var(--paper);
+  border: 1px solid var(--rule);
+}
+
+.sheet .sheet-tabs .sheet-tab--selected {
+  color: var(--ink);
+  background: var(--sheet);
+  border-top: 2px solid var(--ink);
+  border-bottom-color: var(--sheet);
+}
+
+.sheet-tabs-content {
+  display: grid;
+  gap: 16px;
+  padding-top: 16px;
+}
+
+.sheet-tabs-content p {
+  margin: 0;
+}
+
 .chart-note {
   font-size: 0.85rem;
   color: var(--muted);

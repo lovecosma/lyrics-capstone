@@ -7,6 +7,7 @@ from scipy import stats
 
 from data import (
     MIN_DISTINCTIVE_SHARE,
+    SOUND_LAST_YEAR,
     WORDS_PER_RATE,
     PERCENT,
     PROFANITY_TERM,
@@ -15,6 +16,25 @@ from data import (
 )
 
 SHARE_CHART_HEIGHT = 520
+SOUND_FEATURE_LABELS = {
+    "valence": "Valence",
+    "energy": "Energy",
+    "acousticness": "Acousticness",
+    "danceability": "Danceability",
+    "speechiness": "Speechiness",
+}
+DEFAULT_SOUND_FEATURES = ("valence", "energy", "acousticness", "danceability")
+DUMBBELL_MARKER_SIZE = 14
+# Words shown at each end of the word change chart
+WORD_CHANGE_COUNT = 8
+RISE_COLOR = "#15803d"
+FALL_COLOR = "#b91c1c"
+ALL_GENRES_LABEL = "All genres"
+ALL_SONGS_LABEL = "All songs"
+EXPLICIT_TOPIC_COUNT = 7
+SONG_LENGTH_LABEL = "Song length (minutes)"
+SONG_LENGTH_AXIS_PADDING_MINUTES = 0.25
+SOUND_FLAT_CHANGE_PERCENT = 5
 BUBBLE_MAX_SIZE = 45
 BUBBLE_AXIS_ROOM = 1.15
 BUBBLE_FRAME_MS = 1000
@@ -76,6 +96,13 @@ BLS_UNEMPLOYMENT_SOURCE = {
     "details": "[UNRATE] [Data set]. Federal Reserve Bank of St. Louis.",
     "url": "https://fred.stlouisfed.org/series/UNRATE",
 }
+JOSHI_SPOTIFY_SOURCE = {
+    "author": "Joshi",
+    "date": "2023",
+    "title": "Spotify_1Million_Tracks",
+    "details": "[Data set]. Kaggle.",
+    "url": "https://www.kaggle.com/datasets/amitanshjoshi/spotify-1million-tracks",
+}
 BILLBOARD_SOURCE = {
     "author": "Billboard",
     "date": "2000–2024",
@@ -92,8 +119,11 @@ def build_layout(
     genre_topic_share_df,
     distinctive_df,
     shared_words,
+    word_year_df,
     explicit_df,
+    explicit_breakdown_df,
     emotion_df,
+    sound_df,
     economy_df,
 ):
     return html.Div(
@@ -101,11 +131,17 @@ def build_layout(
             build_header(),
             build_genre_sheet(genre_df),
             build_vocabulary_sheet(
-                genre_df, topic_df, genre_topic_share_df, distinctive_df, shared_words
+                genre_df,
+                topic_df,
+                genre_topic_share_df,
+                distinctive_df,
+                shared_words,
+                word_year_df,
             ),
+            build_explicit_sheet(explicit_df, explicit_breakdown_df),
             build_topic_sheet(topic_df, topic_presence_df),
-            build_explicit_sheet(explicit_df),
             build_emotion_sheet(emotion_df),
+            build_sound_sheet(sound_df),
             build_economy_sheet(economy_df, topic_df),
         ],
         className="container",
@@ -161,7 +197,7 @@ def build_genre_sheet(genre_df):
 
 
 def build_vocabulary_sheet(
-    genre_df, topic_df, genre_topic_share_df, distinctive_df, shared_words
+    genre_df, topic_df, genre_topic_share_df, distinctive_df, shared_words, word_year_df
 ):
     return html.Section(
         [
@@ -203,6 +239,14 @@ def build_vocabulary_sheet(
                     category_colors(genre_df, "broad_genre")[DEFAULT_VOCABULARY_GENRE],
                 ),
             ),
+            html.P(
+                "Vocabulary also changed over time. Each bar is the change in the share of songs "
+                "using a word between the first and last eight years. \"Girl\" fell from 43% of "
+                "songs to 28%, \"love\" from 57% to 46% and \"club\" from 15% to 5%. Rap slang "
+                "rose: \"tryna\" from 11% to 21% and \"lil\" from 8% to 14%. The biggest rise was "
+                "strong profanity, from 35% of songs to 49%."
+            ),
+            dcc.Graph(figure=build_word_change_chart(word_year_df)),
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
                 f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
@@ -255,7 +299,7 @@ def build_topic_sheet(topic_df, topic_presence_df):
     )
 
 
-def build_explicit_sheet(explicit_df):
+def build_explicit_sheet(explicit_df, explicit_breakdown_df):
     return html.Section(
         [
             html.H2("Explicit Lyrics Nearly Doubled"),
@@ -271,11 +315,199 @@ def build_explicit_sheet(explicit_df):
                 "2000–2007 to 33.8 in 2017–2024. They held steady through 2008–2016, then jumped in "
                 "2017. The share of songs using at least one rose from 35% to 49%."
             ),
+            dcc.Tabs(
+                [
+                    dcc.Tab(
+                        [
+                            dcc.Graph(
+                                figure=build_explicit_breakdown_chart(
+                                    explicit_breakdown_df,
+                                    "broad_genre",
+                                    list(VOCABULARY_GENRES),
+                                    "Songs with explicit words by genre",
+                                )
+                            ),
+                            html.P(
+                                "The rise wasn't just hip-hop growing. Pop songs with explicit words "
+                                "more than doubled (15% to 34%), R&B's more than doubled (25% to "
+                                "57%) and country's rose from 2% to 12%, while hip-hop, already at "
+                                "84%, reached 94%."
+                            ),
+                            build_explicit_breakdown_table(
+                                explicit_breakdown_df,
+                                "broad_genre",
+                                list(VOCABULARY_GENRES),
+                                "Genre",
+                                ALL_GENRES_LABEL,
+                                "Songs with explicit words by genre and period",
+                            ),
+                        ],
+                        label="By genre",
+                        className="sheet-tab",
+                        selected_className="sheet-tab--selected",
+                    ),
+                    dcc.Tab(
+                        [
+                            dcc.Graph(
+                                figure=build_explicit_breakdown_chart(
+                                    explicit_breakdown_df,
+                                    "main_topic",
+                                    explicit_topics(explicit_breakdown_df),
+                                    "Songs with explicit words by main topic",
+                                )
+                            ),
+                            html.P(
+                                "Explicit words spread beyond the topics you'd expect. Love songs "
+                                "with explicit words went from 11% to 28%, and heartbreak songs from "
+                                "20% to 35%. Songs about money and status, already 86% explicit, "
+                                "reached 96%. Party songs went the other way, from 62% to 42%."
+                            ),
+                            build_explicit_breakdown_table(
+                                explicit_breakdown_df,
+                                "main_topic",
+                                explicit_topics(explicit_breakdown_df),
+                                "Main topic",
+                                ALL_SONGS_LABEL,
+                                "Songs with explicit words by main topic and period",
+                            ),
+                        ],
+                        label="By topic",
+                        className="sheet-tab",
+                        selected_className="sheet-tab--selected",
+                    ),
+                ],
+                parent_className="sheet-tabs",
+                content_className="sheet-tabs-content",
+            ),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}"
+                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
+                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(TYPESAFE_SOURCE)}"
             ),
         ],
         className="sheet",
+    )
+
+
+def build_explicit_breakdown_chart(breakdown_df, category, categories, title):
+    early_years, _, late_years = comparison_periods(breakdown_df["year"])
+    period_shares = (
+        explicit_period_shares(
+            breakdown_df, category, (early_years, late_years), ALL_SONGS_LABEL
+        )
+        .loc[categories]
+        .sort_values(late_years)
+    )
+    labels = list(period_shares.index)
+    early_shares, late_shares = period_shares[early_years], period_shares[late_years]
+    connector_x = [
+        share
+        for label in labels
+        for share in (early_shares[label], late_shares[label], None)
+    ]
+    connector_y = [label for label in labels for _ in range(3)]
+    figure = go.Figure(
+        [
+            go.Scatter(
+                x=connector_x,
+                y=connector_y,
+                mode="lines",
+                line={"color": OTHER_GENRES_COLOR},
+                hoverinfo="skip",
+                showlegend=False,
+            ),
+            go.Scatter(
+                x=early_shares.values,
+                y=labels,
+                mode="markers",
+                name=format_period(*early_years),
+                marker={"color": OTHER_GENRES_COLOR, "size": DUMBBELL_MARKER_SIZE},
+                hovertemplate="%{y}: %{x:.0f}% of songs<extra>%{fullData.name}</extra>",
+            ),
+            go.Scatter(
+                x=late_shares.values,
+                y=labels,
+                mode="markers",
+                name=format_period(*late_years),
+                marker={"color": CATEGORY_COLORS[0], "size": DUMBBELL_MARKER_SIZE},
+                hovertemplate="%{y}: %{x:.0f}% of songs<extra>%{fullData.name}</extra>",
+            ),
+        ]
+    )
+    figure.update_xaxes(
+        title_text="% of songs with at least one explicit word", range=[0, PERCENT]
+    )
+    figure.update_layout(
+        title=build_chart_title(title),
+        height=VOCABULARY_SHEET_CHART_HEIGHT,
+        font_family=CHART_FONT_FAMILY,
+        legend={"orientation": "h", "yanchor": "bottom", "y": 1, "x": 0},
+    )
+    return figure
+
+
+def explicit_period_shares(breakdown_df, category, periods, total_label):
+    def share(counts):
+        return counts["explicit_entry_count"] / counts["entry_count"] * PERCENT
+
+    categorized_df = breakdown_df.dropna(subset=[category])
+    shares = {}
+    for period in periods:
+        category_counts = (
+            categorized_df[categorized_df["year"].between(*period)]
+            .groupby(category)[["explicit_entry_count", "entry_count"]]
+            .sum()
+        )
+        shares[period] = pd.concat(
+            [
+                share(category_counts),
+                pd.Series({total_label: share(category_counts.sum())}),
+            ]
+        )
+    return pd.DataFrame(shares)
+
+
+def build_explicit_breakdown_table(
+    breakdown_df, category, categories, category_label, total_label, title
+):
+    periods = comparison_periods(breakdown_df["year"])
+    early_years, _, late_years = periods
+    shares = explicit_period_shares(breakdown_df, category, periods, total_label).loc[
+        [*categories, total_label]
+    ]
+    changes = shares[late_years] - shares[early_years]
+    header = html.Tr(
+        [
+            html.Th(category_label),
+            *[html.Th(format_period(*period)) for period in periods],
+            html.Th("Change (pts)"),
+        ]
+    )
+    rows = [
+        html.Tr(
+            [
+                html.Td(label),
+                *[html.Td(f"{shares.loc[label, period]:.0f}%") for period in periods],
+                html.Td(
+                    f"{changes[label]:+.0f}",
+                    className=change_class(changes[label], FLAT_CHANGE_POINTS),
+                ),
+            ]
+        )
+        for label in shares.index
+    ]
+    return html.Div(
+        html.Table([html.Caption(title), html.Thead(header), html.Tbody(rows)]),
+        className="table-scroll",
+    )
+
+
+def explicit_topics(breakdown_df):
+    return list(
+        breakdown_df.groupby("main_topic")["entry_count"]
+        .sum()
+        .nlargest(EXPLICIT_TOPIC_COUNT)
+        .index
     )
 
 
@@ -379,13 +611,118 @@ def build_emotion_chart(emotion_df):
     return figure
 
 
+def build_sound_sheet(sound_df):
+    return html.Section(
+        [
+            html.H2("Shorter, Calmer, Sadder-Sounding"),
+            html.P(
+                "Spotify scores each song's audio from 0 to 1 on measures like valence (how "
+                "happy or positive it sounds), energy (how intense and active it feels) and "
+                "acousticness (how much it relies on acoustic rather than electronic sound). "
+                "Each line is the yearly average over the chart entries Spotify matched. The "
+                f"charts stop at {SOUND_LAST_YEAR} because Spotify matched under 60% of later "
+                "entries; hover to see each year's match rate."
+            ),
+            dcc.Graph(figure=build_song_length_chart(sound_df)),
+            dcc.Graph(figure=build_audio_feature_chart(sound_df)),
+            html.P(
+                "Hits got shorter, from 4.08 minutes on average in 2000–2007 to 3.45 minutes in "
+                "2015–2022 (-15%). They also sound sadder and calmer: valence fell from 0.59 to "
+                "0.50 (-15%) and energy from 0.70 to 0.63 (-9%), while acousticness rose from 0.14 "
+                "to 0.19 (+31%). Danceability barely moved (+3%), so hits stayed just as danceable."
+            ),
+            build_sound_table(sound_df),
+            build_chart_note(
+                f"{format_citation(BILLBOARD_SOURCE)}; audio features from "
+                f"{format_citation(JOSHI_SPOTIFY_SOURCE)}"
+            ),
+        ],
+        className="sheet",
+    )
+
+
+def build_song_length_chart(sound_df):
+    figure = px.line(
+        sound_df,
+        x="year",
+        y="minutes",
+        custom_data=["matched_share"],
+        labels={"year": "Year", "minutes": "Average length (minutes)"},
+        height=SHARE_CHART_HEIGHT,
+    )
+    figure.update_traces(
+        line_color=CATEGORY_COLORS[0],
+        hovertemplate=(
+            "%{x}: %{y:.2f} minutes<br>%{customdata[0]:.0f}% of entries matched<extra></extra>"
+        ),
+    )
+    figure.update_yaxes(
+        range=[
+            sound_df["minutes"].min() - SONG_LENGTH_AXIS_PADDING_MINUTES,
+            sound_df["minutes"].max() + SONG_LENGTH_AXIS_PADDING_MINUTES,
+        ]
+    )
+    figure.update_layout(
+        title=build_chart_title(
+            "Average song length, "
+            f"{format_period(sound_df['year'].min(), sound_df['year'].max())}"
+        ),
+        font_family=CHART_FONT_FAMILY,
+    )
+    return figure
+
+
+def build_audio_feature_chart(sound_df):
+    first_year = sound_df["year"].min()
+    baseline_years = (first_year, first_year + PERIOD_LENGTH_YEARS - 1)
+    features = list(SOUND_FEATURE_LABELS)
+    baseline = sound_df[sound_df["year"].between(*baseline_years)][features].mean()
+    feature_df = sound_df.melt(
+        id_vars="year", value_vars=features, var_name="feature", value_name="score"
+    )
+    feature_df["percent_change"] = (
+        feature_df["score"] / feature_df["feature"].map(baseline) - 1
+    ) * PERCENT
+    feature_df = feature_df.replace({"feature": SOUND_FEATURE_LABELS})
+    figure = px.line(
+        feature_df,
+        x="year",
+        y="percent_change",
+        color="feature",
+        custom_data=["score"],
+        category_orders={"feature": list(SOUND_FEATURE_LABELS.values())},
+        labels={
+            "year": "Year",
+            "percent_change": f"% change vs. {format_period(*baseline_years)} average",
+            "feature": "Feature",
+        },
+        height=SHARE_CHART_HEIGHT,
+    )
+    default_labels = [
+        SOUND_FEATURE_LABELS[feature] for feature in DEFAULT_SOUND_FEATURES
+    ]
+    figure.update_traces(hovertemplate="%{y:+.0f}% (score %{customdata[0]:.2f})")
+    figure.update_traces(
+        visible="legendonly", selector=lambda trace: trace.name not in default_labels
+    )
+    figure.add_hline(y=0, line_color=OTHER_GENRES_COLOR, line_width=1)
+    figure.update_layout(
+        title=build_chart_title(
+            f"Change in Spotify audio features vs. {format_period(*baseline_years)}"
+        ),
+        hovermode="x unified",
+        font_family=CHART_FONT_FAMILY,
+    )
+    return figure
+
+
 def build_economy_sheet(economy_df, topic_df):
     party_share = yearly_shares(topic_df, "main_topic").pivot(
         index="year", columns="main_topic", values="entry_share"
     )[HEADLINE_TOPIC]
-    unemployment = economy_df.pivot(index="year", columns="indicator", values="value").loc[
-        party_share.index, UNEMPLOYMENT_INDICATOR
-    ]
+    unemployment = economy_df.pivot(
+        index="year", columns="indicator", values="value"
+    ).loc[party_share.index, UNEMPLOYMENT_INDICATOR]
     party_color = category_colors(topic_df, "main_topic")[HEADLINE_TOPIC]
     return html.Section(
         [
@@ -395,7 +732,9 @@ def build_economy_sheet(economy_df, topic_df):
                 "shows how far a year sits above or below its own 25-year average."
             ),
             dcc.Graph(
-                figure=build_unemployment_party_chart(unemployment, party_share, party_color)
+                figure=build_unemployment_party_chart(
+                    unemployment, party_share, party_color
+                )
             ),
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}; "
@@ -430,9 +769,13 @@ def build_unemployment_party_chart(unemployment, party_share, party_color):
     )
     figure.add_hline(y=0, line_color=OTHER_GENRES_COLOR, line_width=1)
     figure.update_xaxes(title_text="Year")
-    figure.update_yaxes(title_text="Above or below the 25-year average (standard deviations)")
+    figure.update_yaxes(
+        title_text="Above or below the 25-year average (standard deviations)"
+    )
     figure.update_layout(
-        title=build_chart_title(f"Party songs and unemployment move together (r = {correlation:.2f})"),
+        title=build_chart_title(
+            f"Party songs and unemployment move together (r = {correlation:.2f})"
+        ),
         height=SHARE_CHART_HEIGHT,
         hovermode="x unified",
         font_family=CHART_FONT_FAMILY,
@@ -575,6 +918,49 @@ def category_colors(year_df, category):
     }
 
 
+def build_word_change_chart(word_year_df):
+    early_years, _, late_years = comparison_periods(word_year_df["year"])
+
+    def period_shares(period):
+        period_df = word_year_df[word_year_df["year"].between(*period)]
+        period_entry_count = period_df.drop_duplicates("year")["year_entry_count"].sum()
+        return period_df.groupby("word")["entry_count"].sum() / period_entry_count * PERCENT
+
+    shares = pd.DataFrame(
+        {"early": period_shares(early_years), "late": period_shares(late_years)}
+    ).fillna(0)
+    shares["change"] = shares["late"] - shares["early"]
+    biggest_changes = pd.concat(
+        [
+            shares.nsmallest(WORD_CHANGE_COUNT, "change"),
+            shares.nlargest(WORD_CHANGE_COUNT, "change"),
+        ]
+    ).sort_values("change")
+    figure = go.Figure(
+        go.Bar(
+            x=biggest_changes["change"],
+            y=biggest_changes.index,
+            orientation="h",
+            marker_color=np.where(biggest_changes["change"] > 0, RISE_COLOR, FALL_COLOR),
+            customdata=biggest_changes[["early", "late"]].values,
+            hovertemplate=(
+                "%{y}: %{customdata[0]:.0f}% → %{customdata[1]:.0f}% of songs "
+                "(%{x:+.1f} pts)<extra></extra>"
+            ),
+        )
+    )
+    figure.update_xaxes(title_text="Change in share of songs using the word (pts)")
+    figure.update_layout(
+        title=build_chart_title(
+            "Biggest changes in word use, "
+            f"{format_period(*early_years)} vs. {format_period(*late_years)}"
+        ),
+        height=VOCABULARY_SHEET_CHART_HEIGHT,
+        font_family=CHART_FONT_FAMILY,
+    )
+    return figure
+
+
 def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
     genre_order = list(
         genre_topic_share_df.drop_duplicates("broad_genre").sort_values(
@@ -668,6 +1054,63 @@ def build_vocabulary_chart(distinctive_df, genre, genre_color):
     return figure
 
 
+# The first and last PERIOD_LENGTH_YEARS years, and the years between
+def comparison_periods(years):
+    first_year, last_year = years.min(), years.max()
+    early_years = (first_year, first_year + PERIOD_LENGTH_YEARS - 1)
+    late_years = (last_year - PERIOD_LENGTH_YEARS + 1, last_year)
+    middle_years = (early_years[1] + 1, late_years[0] - 1)
+    return early_years, middle_years, late_years
+
+
+def build_sound_table(sound_df):
+    periods = comparison_periods(sound_df["year"])
+    measure_labels = {"minutes": SONG_LENGTH_LABEL, **SOUND_FEATURE_LABELS}
+    period_averages = pd.DataFrame(
+        {
+            period: sound_df[sound_df["year"].between(*period)][
+                list(measure_labels)
+            ].mean()
+            for period in periods
+        }
+    )
+    early_years, middle_years, late_years = periods
+    percent_changes = (
+        period_averages[late_years] / period_averages[early_years] - 1
+    ) * PERCENT
+    header = html.Tr(
+        [
+            html.Th("Measure"),
+            *[html.Th(format_period(*period)) for period in periods],
+            html.Th("Change"),
+        ]
+    )
+    rows = [
+        html.Tr(
+            [
+                html.Td(label),
+                *[
+                    html.Td(f"{period_averages.loc[measure, period]:.2f}")
+                    for period in periods
+                ],
+                html.Td(
+                    f"{percent_changes[measure]:+.0f}%",
+                    className=change_class(
+                        percent_changes[measure], SOUND_FLAT_CHANGE_PERCENT
+                    ),
+                ),
+            ]
+        )
+        for measure, label in measure_labels.items()
+    ]
+    return html.Div(
+        html.Table(
+            [html.Caption("Sound by period"), html.Thead(header), html.Tbody(rows)]
+        ),
+        className="table-scroll",
+    )
+
+
 def build_share_table(
     year_df,
     category,
@@ -678,11 +1121,7 @@ def build_share_table(
 ):
     if year_totals is None:
         year_totals = year_df.groupby("year")["entry_count"].sum()
-    first_year = year_df["year"].min()
-    last_year = year_df["year"].max()
-    early_years = (first_year, first_year + PERIOD_LENGTH_YEARS - 1)
-    late_years = (last_year - PERIOD_LENGTH_YEARS + 1, last_year)
-    middle_years = (early_years[1] + 1, late_years[0] - 1)
+    early_years, middle_years, late_years = comparison_periods(year_df["year"])
     shares = (
         pd.DataFrame(
             {

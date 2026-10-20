@@ -10,6 +10,7 @@ from data import (
     EconomyRepository,
     EmotionRepository,
     GenreRepository,
+    SoundRepository,
     TopicRepository,
     VocabularyRepository,
 )
@@ -36,10 +37,13 @@ if __name__ == "__main__":
     topic_presence_df = topic_repository.get_presence_year_counts()
     vocabulary_repository = VocabularyRepository(engine)
     explicit_df = vocabulary_repository.get_explicit_year_rates()
+    explicit_breakdown_df = vocabulary_repository.get_explicit_breakdown_counts()
     emotion_df = EmotionRepository(engine).get_year_shares()
+    sound_df = SoundRepository(engine).get_year_averages()
     economy_df = EconomyRepository(engine).get_year_averages()
     distinctive_df = vocabulary_repository.get_distinctive_terms()
     shared_words = vocabulary_repository.get_shared_top_words()
+    word_year_df = vocabulary_repository.get_word_year_counts()
     callbacks.set_data(distinctive_df, category_colors(genre_df, "broad_genre"))
 
     app = Dash(title="Hot 100 Lyrics")
@@ -50,8 +54,11 @@ if __name__ == "__main__":
         genre_topic_share_df,
         distinctive_df,
         shared_words,
+        word_year_df,
         explicit_df,
+        explicit_breakdown_df,
         emotion_df,
+        sound_df,
         economy_df,
     )
 

@@ -6,6 +6,9 @@ TOPIC_PRESENCE_THRESHOLD = 0.7
 LYRICS_ANALYSIS_VERSION = "v3"
 PERCENT = 100
 WORDS_PER_RATE = 1000
+MS_PER_MINUTE = 60000
+# Spotify audio features cover under 60% of chart entries after this year
+SOUND_LAST_YEAR = 2022
 MAX_NGRAM_LENGTH = 2
 VOCABULARY_GENRES = (
     "Pop",
@@ -19,6 +22,8 @@ DISTINCTIVE_SMOOTHING_POINTS = 0.5
 DISTINCTIVE_TERM_COUNT = 10
 SHARED_WORD_RANK = 12
 PROFANITY_TERM = "[strong profanity]"
+# Words used in fewer chart entries than this across all years are too rare to track over time
+MIN_WORD_ENTRY_COUNT = 100
 
 
 class GenreRepository:
@@ -214,6 +219,82 @@ class VocabularyRepository:
             },
         )
 
+    def get_explicit_breakdown_counts(self):
+        sql = f"""
+    with song as (
+      select ce.year, ce.track_id, ce.broad_genre, bool_or(lw.is_explicit) as has_explicit
+      from {LYRICS_SCHEMA}.chart_entry ce
+      join {LYRICS_SCHEMA}.lyrics_word lw on lw.track_id = ce.track_id
+      where lw.analysis_version = %(lyrics_analysis_version)s
+      group by ce.year, ce.track_id, ce.broad_genre
+    )
+    select
+      s.year,
+      s.broad_genre,
+      tt.topic as main_topic,
+      (count(*) filter (where s.has_explicit))::int as explicit_entry_count,
+      count(*)::int as entry_count
+    from song s
+    join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = s.track_id
+    where tt.is_primary
+      and tt.analysis_version = %(topic_analysis_version)s
+    group by s.year, s.broad_genre, tt.topic
+    """
+        return pd.read_sql(
+            sql,
+            self._engine,
+            params={
+                "lyrics_analysis_version": LYRICS_ANALYSIS_VERSION,
+                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
+            },
+        )
+
+    def get_word_year_counts(self):
+        sql = f"""
+    with word_entry as (
+      select
+        ce.year,
+        ce.chart_track_id,
+        case when lw.is_explicit then %(profanity_term)s else lw.word end as word
+      from {LYRICS_SCHEMA}.chart_entry ce
+      join {LYRICS_SCHEMA}.lyrics_word lw on lw.track_id = ce.track_id
+      where lw.analysis_version = %(analysis_version)s
+    ),
+    year_word as (
+      select year, word, count(distinct chart_track_id) as entry_count
+      from word_entry
+      group by year, word
+    ),
+    common_word as (
+      select word
+      from year_word
+      group by word
+      having sum(entry_count) >= %(min_entry_count)s
+    ),
+    year_size as (
+      select year, count(*) as entry_count
+      from {LYRICS_SCHEMA}.chart_entry
+      group by year
+    )
+    select
+      yw.year,
+      yw.word,
+      yw.entry_count::int as entry_count,
+      ys.entry_count::int as year_entry_count
+    from year_word yw
+    join common_word cw on cw.word = yw.word
+    join year_size ys on ys.year = yw.year
+    """
+        return pd.read_sql(
+            sql,
+            self._engine,
+            params={
+                "analysis_version": LYRICS_ANALYSIS_VERSION,
+                "profanity_term": PROFANITY_TERM,
+                "min_entry_count": MIN_WORD_ENTRY_COUNT,
+            },
+        )
+
     def get_shared_top_words(self):
         sql = f"""
     with {self.GENRE_SIZE_CTE},
@@ -308,3 +389,37 @@ class EconomyRepository:
     group by ei.display_name, extract(year from eo.observation_date)
     """
         return pd.read_sql(sql, self._engine)
+
+
+class SoundRepository:
+    def __init__(self, engine):
+        self._engine = engine
+
+    # Yearly averages of Spotify audio features over the entries Spotify matched, with the
+    # share matched so charts can show coverage
+    def get_year_averages(self):
+        sql = f"""
+    select
+      ce.year,
+      count(t.duration_ms) * %(percent)s::float / count(*) as matched_share,
+      avg(t.duration_ms) / %(ms_per_minute)s::float as minutes,
+      avg(t.valence)::float as valence,
+      avg(t.energy)::float as energy,
+      avg(t.danceability)::float as danceability,
+      avg(t.acousticness)::float as acousticness,
+      avg(t.speechiness)::float as speechiness
+    from {LYRICS_SCHEMA}.chart_entry ce
+    join {LYRICS_SCHEMA}.track t on t.track_id = ce.track_id
+    where ce.year <= %(last_year)s
+    group by ce.year
+    order by ce.year
+    """
+        return pd.read_sql(
+            sql,
+            self._engine,
+            params={
+                "percent": PERCENT,
+                "ms_per_minute": MS_PER_MINUTE,
+                "last_year": SOUND_LAST_YEAR,
+            },
+        )
