@@ -1,7 +1,9 @@
 import logging
 import re
 import unicodedata
+from collections.abc import Callable
 from types import MappingProxyType
+from typing import ClassVar
 
 import pandas as pd
 
@@ -90,7 +92,9 @@ class TrackMerger:
     EXACT_ARTIST_MATCH_COLUMN = "is_exact_artist_match"
     TITLE_SUFFIX_COLUMN = "has_title_suffix"
 
-    def transform(self, billboard_df, candidate_track_df):
+    def transform(
+        self, billboard_df: pd.DataFrame, candidate_track_df: pd.DataFrame
+    ) -> pd.DataFrame:
         logger.info(
             "Matching %d Billboard rows to %d candidate tracks",
             len(billboard_df),
@@ -108,7 +112,7 @@ class TrackMerger:
         )
         return billboard_df.join(best_match_df)
 
-    def _normalize_name(self, name):
+    def _normalize_name(self, name: str) -> str:
         decomposed = unicodedata.normalize(
             self.UNICODE_DECOMPOSITION_FORM, name.casefold()
         )
@@ -119,7 +123,7 @@ class TrackMerger:
             self.WORD_SEPARATOR, self.PUNCTUATION_PATTERN.sub("", unaccented)
         ).strip()
 
-    def _normalize_artist_name(self, artist_name):
+    def _normalize_artist_name(self, artist_name: str) -> str:
         for character, replacement in self.ARTIST_CHARACTER_REPLACEMENTS.items():
             artist_name = artist_name.replace(character, replacement)
         unconjoined = self.CONJUNCTION_PATTERN.sub(
@@ -130,21 +134,21 @@ class TrackMerger:
             self.WHITESPACE_PATTERN.sub(self.WORD_SEPARATOR, unconjoined).strip(),
         )
 
-    def _get_lead_artist(self, artist_name):
+    def _get_lead_artist(self, artist_name: str) -> str:
         lead_artist, *_other_artists = self.LEAD_ARTIST_SEPARATOR.split(artist_name)
         # A name that starts with a separator word, like "X Ambassadors", has no lead
         return lead_artist or artist_name
 
-    def _compact_name(self, name):
+    def _compact_name(self, name: str) -> str:
         return self.WHITESPACE_PATTERN.sub("", name)
 
-    def get_primary_artist(self, artist_name):
+    def get_primary_artist(self, artist_name: str) -> str:
         primary_artist, *_featured_artists = self.FEATURED_ARTIST_SEPARATOR.split(
             artist_name
         )
         return primary_artist
 
-    def _get_track_match_names(self, track_name):
+    def _get_track_match_names(self, track_name: str) -> list[str]:
         uncredited_name = self.FEATURED_CREDIT_PATTERN.sub("", track_name)
         unsuffixed_names = [
             suffix_pattern.sub("", uncredited_name)
@@ -160,24 +164,28 @@ class TrackMerger:
             }
         )
 
-    def _strip_trailing_brackets(self, track_name):
+    def _strip_trailing_brackets(self, track_name: str) -> list[str]:
         stripped_names = []
         while self.TRAILING_BRACKET_PATTERN.search(track_name):
             track_name = self.TRAILING_BRACKET_PATTERN.sub("", track_name)
             stripped_names.append(track_name)
         return stripped_names
 
-    def _is_exact_artist_match(self, artist_match_name, candidate_artist_match_name):
+    def _is_exact_artist_match(
+        self, artist_match_name: str, candidate_artist_match_name: str
+    ) -> bool:
         return self._compact_name(artist_match_name) == self._compact_name(
             candidate_artist_match_name
         )
 
-    def _is_featured_artist_match(self, artist_match_name, candidate_artist_match_name):
+    def _is_featured_artist_match(
+        self, artist_match_name: str, candidate_artist_match_name: str
+    ) -> bool:
         return artist_match_name.startswith(
             f"{candidate_artist_match_name}{self.WORD_SEPARATOR}"
         )
 
-    def _add_match_names(self, df):
+    def _add_match_names(self, df: pd.DataFrame) -> pd.DataFrame:
         primary_artists = (
             df[self.ARTIST_NAME_COLUMN]
             .fillna("")
@@ -202,7 +210,9 @@ class TrackMerger:
         )
         return match_name_df[has_match_names]
 
-    def _find_candidates(self, billboard_df, candidate_track_df):
+    def _find_candidates(
+        self, billboard_df: pd.DataFrame, candidate_track_df: pd.DataFrame
+    ) -> pd.DataFrame:
         billboard_match_df = self._add_match_names(billboard_df)[
             [self.TRACK_NAME_COLUMN, *self.MATCH_NAME_COLUMNS]
         ].reset_index(names=self.BILLBOARD_ROW_COLUMN)
@@ -212,7 +222,11 @@ class TrackMerger:
             suffixes=self.CANDIDATE_COLUMN_SUFFIXES,
         )
 
-    def _match_artists(self, candidate_df, is_artist_match):
+    def _match_artists(
+        self,
+        candidate_df: pd.DataFrame,
+        is_artist_match: Callable[[str, str], bool],
+    ) -> pd.Series:
         artist_match_name_pairs = zip(
             candidate_df[self.ARTIST_MATCH_NAME_COLUMN],
             candidate_df[self.CANDIDATE_ARTIST_MATCH_NAME_COLUMN],
@@ -225,7 +239,7 @@ class TrackMerger:
             index=candidate_df.index,
         )
 
-    def _is_matching_version(self, candidate_df):
+    def _is_matching_version(self, candidate_df: pd.DataFrame) -> pd.Series:
         candidate_version_suffixes = (
             candidate_df[self.CANDIDATE_TRACK_NAME_COLUMN]
             .fillna("")
@@ -238,7 +252,7 @@ class TrackMerger:
             self.ALTERNATE_VERSION_PATTERN, na=False
         )
 
-    def _has_title_suffix(self, candidate_df):
+    def _has_title_suffix(self, candidate_df: pd.DataFrame) -> pd.Series:
         uncredited_names = (
             candidate_df[self.CANDIDATE_TRACK_NAME_COLUMN]
             .fillna("")
@@ -246,7 +260,7 @@ class TrackMerger:
         )
         return uncredited_names.str.contains(self.TITLE_SUFFIX_PATTERN)
 
-    def _select_best_matches(self, candidate_df):
+    def _select_best_matches(self, candidate_df: pd.DataFrame) -> pd.DataFrame:
         is_exact_artist_match = self._match_artists(
             candidate_df, self._is_exact_artist_match
         )
@@ -360,7 +374,7 @@ class GenreMappingTransformer:
 
 
 class ChartTransformer:
-    def transform(self, track_df):
+    def transform(self, track_df: pd.DataFrame) -> pd.DataFrame:
         chart_df = (
             track_df["chart_year"]
             .dropna()
@@ -398,7 +412,7 @@ class TrackTransformer:
     INTEGER_COLUMNS = ("key", "mode", "time_signature", "duration_ms")
     NULLABLE_INTEGER_DTYPE = "Int64"
 
-    def transform(self, track_df):
+    def transform(self, track_df: pd.DataFrame) -> pd.DataFrame:
         song_df = (
             track_df.sort_values(self.CHART_YEAR_COLUMN, kind="stable")
             .drop_duplicates(subset=list(self.SONG_KEY_COLUMNS))
@@ -434,7 +448,12 @@ class TrackGenreTransformer:
 
 
 class ChartTrackTransformer:
-    def transform(self, db_track_df, db_chart_df, source_track_df):
+    def transform(
+        self,
+        db_track_df: pd.DataFrame,
+        db_chart_df: pd.DataFrame,
+        source_track_df: pd.DataFrame,
+    ) -> pd.DataFrame:
         track_df = db_track_df.merge(
             source_track_df[["track_name", "artist_name", "chart_year", "rank"]],
             how="left",
@@ -622,11 +641,11 @@ class ProfanityWordTransformer:
 
 
 class LookupTableTransformer:
-    KEY_COLUMN = None
-    COLUMNS = ()
-    ROW_DESCRIPTION = None
+    KEY_COLUMN: ClassVar[str]
+    COLUMNS: ClassVar[tuple[str, ...]]
+    ROW_DESCRIPTION: ClassVar[str]
 
-    def transform(self, lookup_df):
+    def transform(self, lookup_df: pd.DataFrame) -> pd.DataFrame:
         lookup_df = (
             lookup_df[list(self.COLUMNS)]
             .drop_duplicates(subset=[self.KEY_COLUMN])

@@ -1,11 +1,14 @@
 import csv
 import logging
 import re
+from collections.abc import Iterable, Sequence
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
+import psycopg
 from psycopg import sql
-from sqlalchemy import text
+from sqlalchemy import Connection, text
 
 from services.transformers import (
     BroadGenreTransformer,
@@ -51,23 +54,25 @@ class Extractor:
     COMMENT_PREFIX = "#"
     TRACK_IDS_PARAMETER = "track_ids"
 
-    def __init__(self, connection):
+    def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
-    def extract_from_csv(self, file_path, **read_csv_options) -> pd.DataFrame:
+    def extract_from_csv(
+        self, file_path: str | Path, **read_csv_options: Any
+    ) -> pd.DataFrame:
         logger.info("Extracting rows from CSV at %s", file_path)
         df = pd.read_csv(file_path, **read_csv_options)
         logger.info("Extracted %d rows from CSV", len(df))
         return df
 
-    def extract_from_db(self, table_name):
+    def extract_from_db(self, table_name: str) -> pd.DataFrame:
         logger.info("Extracting %s.%s from the database", LYRICS_SCHEMA, table_name)
         query = f"select * from {LYRICS_SCHEMA}.{table_name}"
         df = pd.read_sql_query(query, con=self._connection)
         logger.info("Extracted %d rows from %s.%s", len(df), LYRICS_SCHEMA, table_name)
         return df
 
-    def extract_tracks(self, track_ids):
+    def extract_tracks(self, track_ids: Sequence[int]) -> pd.DataFrame:
         logger.info("Extracting %d tracks from the database", len(track_ids))
         query = text(
             f"select * from {LYRICS_SCHEMA}.{TRACK_TABLE}"
@@ -81,7 +86,7 @@ class Extractor:
         logger.info("Extracted %d tracks", len(track_df))
         return track_df
 
-    def extract_word_list(self, file_path):
+    def extract_word_list(self, file_path: str | Path) -> frozenset[str]:
         logger.info("Extracting word list from %s", file_path)
         with open(file_path, encoding="utf-8") as word_list_file:
             lines = (line.strip() for line in word_list_file)
@@ -107,7 +112,7 @@ class BillboardExtractor(Extractor):
     LYRICS_COLUMN = "lyrics"
     NAME_COLUMNS = (TRACK_NAME_COLUMN, ARTIST_NAME_COLUMN)
 
-    def extract_from_directory(self, directory_path):
+    def extract_from_directory(self, directory_path: str | Path) -> pd.DataFrame:
         logger.info(
             "Extracting songs from CSV files in directory at %s", directory_path
         )
@@ -116,7 +121,7 @@ class BillboardExtractor(Extractor):
         logger.info("Extracted %d rows from %d CSV files", len(df), len(file_paths))
         return df
 
-    def _extract_chart_lyrics(self, file_path) -> pd.DataFrame:
+    def _extract_chart_lyrics(self, file_path: Path) -> pd.DataFrame:
         return (
             self.extract_from_csv(file_path)
             .set_axis(self.LYRICS_COLUMNS, axis="columns")
@@ -125,7 +130,7 @@ class BillboardExtractor(Extractor):
             .assign(chart_year=self._get_chart_year(file_path))
         )
 
-    def _drop_missing_lyrics(self, df, file_path):
+    def _drop_missing_lyrics(self, df: pd.DataFrame, file_path: Path) -> pd.DataFrame:
         lyrics_df = df.dropna(subset=[self.LYRICS_COLUMN])
         dropped_row_count = len(df) - len(lyrics_df)
         if dropped_row_count:
@@ -137,7 +142,7 @@ class BillboardExtractor(Extractor):
             )
         return lyrics_df
 
-    def _strip_names(self, df):
+    def _strip_names(self, df: pd.DataFrame) -> pd.DataFrame:
         return df.assign(
             **{
                 name_column: df[name_column].str.strip()
@@ -145,7 +150,7 @@ class BillboardExtractor(Extractor):
             }
         )
 
-    def _get_chart_year(self, file_path):
+    def _get_chart_year(self, file_path: Path) -> int:
         chart_year_match = self.CHART_YEAR_PATTERN.search(file_path.name)
         if chart_year_match is None:
             raise ValueError(f"No chart year in file name: {file_path}")
@@ -202,10 +207,10 @@ class NrcLexiconExtractor(Extractor):
 
 
 class Loader:
-    def __init__(self, connection):
+    def __init__(self, connection: Connection) -> None:
         self._connection = connection
 
-    def load_to_db(self, df, table_name):
+    def load_to_db(self, df: pd.DataFrame, table_name: str) -> int | None:
         logger.info("Loading %d rows into %s.%s", len(df), LYRICS_SCHEMA, table_name)
         result = df.to_sql(
             table_name,
@@ -217,7 +222,7 @@ class Loader:
         logger.info("Loaded %s.%s", LYRICS_SCHEMA, table_name)
         return result
 
-    def copy_to_db(self, df, table_name):
+    def copy_to_db(self, df: pd.DataFrame, table_name: str) -> None:
         logger.info("Copying %d rows into %s.%s", len(df), LYRICS_SCHEMA, table_name)
         copy_statement = sql.SQL("copy {table} ({columns}) from stdin").format(
             table=sql.Identifier(LYRICS_SCHEMA, table_name),
@@ -229,7 +234,7 @@ class Loader:
                 copy.write_row(row)
         logger.info("Copied %s.%s", LYRICS_SCHEMA, table_name)
 
-    def update_db(self, df, table_name, key_column):
+    def update_db(self, df: pd.DataFrame, table_name: str, key_column: str) -> None:
         logger.info("Updating %d rows in %s.%s", len(df), LYRICS_SCHEMA, table_name)
         value_columns = df.columns.drop(key_column)
         update_statement = sql.SQL(
@@ -248,10 +253,10 @@ class Loader:
             )
         logger.info("Updated %s.%s", LYRICS_SCHEMA, table_name)
 
-    def _driver_connection(self):
+    def _driver_connection(self) -> psycopg.Connection:
         return self._connection.connection.driver_connection
 
-    def _to_rows(self, df):
+    def _to_rows(self, df: pd.DataFrame) -> Iterable[tuple[Any, ...]]:
         return (
             df.astype(object).where(df.notna(), None).itertuples(index=False, name=None)
         )
@@ -260,13 +265,19 @@ class Loader:
 class TrackProcessor:
     SPOTIFY_ID_COLUMNS = ("Unnamed: 0", "track_id")
 
-    def __init__(self, extractor, loader, billboard_directory_path, spotify_csv_path):
+    def __init__(
+        self,
+        extractor: BillboardExtractor,
+        loader: Loader,
+        billboard_directory_path: str | Path,
+        spotify_csv_path: str | Path,
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._billboard_directory_path = billboard_directory_path
         self._spotify_csv_path = spotify_csv_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting track ETL")
         billboard_df = self._extractor.extract_from_directory(
             self._billboard_directory_path
@@ -293,12 +304,14 @@ class TrackProcessor:
 
 
 class TopicProcessor:
-    def __init__(self, extractor, loader, topic_csv_path):
+    def __init__(
+        self, extractor: Extractor, loader: Loader, topic_csv_path: str | Path
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._topic_csv_path = topic_csv_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting topic ETL")
         topic_df = self._extractor.extract_from_csv(self._topic_csv_path)
         self._loader.load_to_db(TopicsTransformer().transform(topic_df), TOPIC_TABLE)
