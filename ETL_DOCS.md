@@ -7,7 +7,7 @@
 - Interesting Parts: 
   - Passes any pandas read_csv options through, so subclasses and callers can tune parsing
   - Reads a batch of tracks by ID with one parameterized `any(:track_ids)` query
-  - Reads word lists as a frozenset, skipping blank lines and `#` comments
+  - Reads word lists as a frozenset
 - Key Tech:
   - pandas
   - SQLAlchemy connection
@@ -29,6 +29,21 @@
   - Pandas dataframe with billboard chart listings
 
 
+## NRC Lexicon Extractor(Extractor)
+- Inputs: DB Connection
+- Purpose: 
+  - Read the tab-separated NRC lexicon file into a dataframe with the given column names
+- Interesting Parts: 
+  - The file has no header row, so callers pass the column names
+  - Turns off quote handling, so words containing quote characters are read as-is
+  - Only empty fields count as missing, so real words like "null" and "nan" aren't read as NaN
+- Key Tech:
+  - pandas
+  - csv
+- Outputs: 
+  - Pandas dataframe of lexicon rows
+
+
 ## Loader
 - Inputs: DB Connection
 - Purpose: 
@@ -38,7 +53,7 @@
   - bulk inserts with COPY and updates use the raw psycopg connection under SQLAlchemy, for speed on large batches
   - COPY is used for the lyrics analysis results (lyrics_metric, lyrics_ngram_metric, lyrics_topic). They're written batch by batch and n-grams produce many rows per track, so streaming rows in one COPY is much faster than loading rows one by one
   - Converts missing values (NaN, NA) to None so they load as NULL
-  - Builds table and column names with `psycopg.sql` identifiers, so names are quoted safely
+  - Builds table and column names with psycopg.sql identifiers, so names are quoted safely
 - Key Tech:
   - pandas
   - SQLAlchemy connection
@@ -176,3 +191,74 @@
   - pandas
 - Outputs: 
   - Dataframe of topics, ready to load into the topic table
+
+
+## Emotion Lexicon Processor
+- Inputs: NrcLexiconExtractor, Loader, NRC emotion lexicon path
+- Purpose: 
+  - Load the NRC word-emotion lexicon so lyrics can be scored by emotion
+- Interesting Parts: 
+  - Keeps only word-emotion pairs the lexicon marks as associated (1), skipping the 0 rows
+  - Adds dropped-g variants of "-ing" words ("loving" → "lovin"), since lyrics often spell them that way
+  - Loads the emotions first, then reads them back to link each word to its emotion ID
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the emotion and word_emotion tables
+
+
+## Emotion Lexicon Transformer
+- Inputs: DroppedGVariantBuilder, NRC lexicon dataframe of word, emotion, association
+- Purpose: 
+  - Turn the raw NRC lexicon into one row per associated word and emotion
+- Interesting Parts: 
+  - Drops rows with no emotion and trims and lowercases words, so stray lines and spacing don't create bad pairs
+  - Keeps only associated pairs
+  - Adds dropped-g variants ("loving" → "lovin") from the injected variant builder, skipping any already in the lexicon
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of word and emotion name pairs, used to build the emotion and word_emotion tables
+
+
+## Dropped G Variant Builder
+- Inputs: lexicon dataframe, name of its word column, set of words already in the lexicon
+- Purpose: 
+  - Build "-in" spellings of "-ing" words so lexicon words match how lyrics are written ("loving" → "lovin")
+- Interesting Parts: 
+  - Lyrics tokenizing turns "lovin'" into "lovin", so without these variants those words would never match
+  - Skips short words like "king" and "sing" whose stem is under 2 letters, since they aren't gerunds
+  - Skips variants already in the lexicon, so a real entry is never duplicated or overridden
+  - Copies the rest of each row (like the emotion), so the variant scores the same as the original word
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of new variant rows, same columns as the input, for the caller to append
+
+
+## Emotion Transformer
+- Inputs: word-emotion dataframe
+- Purpose: 
+  - Build one row per emotion for the emotion table
+- Interesting Parts: 
+  - Takes the unique emotion names from the word-emotion pairs, so the table always matches the lexicon
+  - Sorts names alphabetically, so emotion IDs come out the same on every run
+  - Adds a display name by title-casing the name ("anticipation" → "Anticipation")
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of name and display_name, ready to load into the emotion table
+
+
+## Word Emotion Transformer
+- Inputs: emotion dataframe read back from the DB, word-emotion dataframe (from EmotionLexiconTransformer)
+- Purpose: 
+  - Link each lexicon word to its emotions by emotion ID
+- Interesting Parts: 
+  - Joins on emotion name to swap names for the DB emotion IDs, so the output only holds the word and a foreign key
+  - Inner join, so a pair whose emotion isn't in the DB is dropped instead of loading without an ID
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of word and emotion_id, ready to load into the word_emotion table

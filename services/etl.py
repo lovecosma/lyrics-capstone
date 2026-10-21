@@ -25,7 +25,6 @@ from services.transformers import (
     TrackMerger,
     TrackTransformer,
     WordEmotionTransformer,
-    WordVadTransformer,
 )
 
 LYRICS_SCHEMA = "billboard_lyrics"
@@ -42,7 +41,6 @@ LYRICS_METRIC_TABLE = "lyrics_metric"
 LYRICS_NGRAM_METRIC_TABLE = "lyrics_ngram_metric"
 EMOTION_TABLE = "emotion"
 WORD_EMOTION_TABLE = "word_emotion"
-WORD_VAD_TABLE = "word_vad"
 PROFANITY_WORD_TABLE = "profanity_word"
 ECONOMIC_INDICATOR_TABLE = "economic_indicator"
 ECONOMIC_OBSERVATION_TABLE = "economic_observation"
@@ -194,7 +192,9 @@ class NrcLexiconExtractor(Extractor):
     # Only empty fields are missing; words like "null" and "nan" are real entries
     MISSING_VALUES = ("",)
 
-    def extract_lexicon(self, file_path, column_names):
+    def extract_lexicon(
+        self, file_path: str | Path, column_names: Sequence[str]
+    ) -> pd.DataFrame:
         return self.extract_from_csv(
             file_path,
             sep=self.FIELD_SEPARATOR,
@@ -354,30 +354,27 @@ class GenreMappingProcessor:
 
 
 class EmotionLexiconProcessor:
-    def __init__(self, extractor, loader, emotion_lexicon_path, vad_lexicon_path):
+    def __init__(
+        self,
+        extractor: NrcLexiconExtractor,
+        loader: Loader,
+        emotion_lexicon_path: str | Path,
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._emotion_lexicon_path = emotion_lexicon_path
-        self._vad_lexicon_path = vad_lexicon_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting emotion lexicon ETL")
         lexicon_df = self._extractor.extract_lexicon(
             self._emotion_lexicon_path, EmotionLexiconTransformer.LEXICON_COLUMNS
         )
-        vad_df = self._extractor.extract_lexicon(
-            self._vad_lexicon_path, WordVadTransformer.LEXICON_COLUMNS
-        )
-        variant_builder = DroppedGVariantBuilder()
-        word_emotion_df = EmotionLexiconTransformer(variant_builder).transform(
+        word_emotion_df = EmotionLexiconTransformer(DroppedGVariantBuilder()).transform(
             lexicon_df
         )
 
         self._loader.load_to_db(
             EmotionTransformer().transform(word_emotion_df), EMOTION_TABLE
-        )
-        self._loader.load_to_db(
-            WordVadTransformer(variant_builder).transform(vad_df), WORD_VAD_TABLE
         )
 
         word_emotion_df = WordEmotionTransformer().transform(

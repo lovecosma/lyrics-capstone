@@ -44,7 +44,6 @@ GENRE_SNAPSHOT_PATH = "data/itunes_track_genres.csv"
 GENRE_MAPPING_PATH = "data/genre_mapping.csv"
 LYRICS_TOPIC_SNAPSHOT_PATH = "data/typesafe_lyrics_topics.csv"
 EMOTION_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/emotion-lexicon.txt"
-VAD_LEXICON_PATH = "data/NRC-Emotion-Lexicon-v0.92/vad-lexicon.txt"
 PROFANITY_PATH = "data/profanity_en.csv"
 ECONOMIC_INDICATOR_PATH = "data/economic_indicators.csv"
 FRED_PATH = "data/fred"
@@ -86,10 +85,7 @@ def run_etl():
             ),
             TopicProcessor(Extractor(conn), loader, TOPIC_PATH),
             EmotionLexiconProcessor(
-                NrcLexiconExtractor(conn),
-                loader,
-                EMOTION_LEXICON_PATH,
-                VAD_LEXICON_PATH,
+                NrcLexiconExtractor(conn), loader, EMOTION_LEXICON_PATH
             ),
             ProfanityProcessor(Extractor(conn), loader, PROFANITY_PATH),
             EconomicIndicatorProcessor(

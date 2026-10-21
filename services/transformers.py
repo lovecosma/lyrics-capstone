@@ -1,9 +1,9 @@
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Set
 from types import MappingProxyType
-from typing import ClassVar
+from typing import ClassVar, Protocol
 
 import pandas as pd
 
@@ -475,6 +475,12 @@ class ChartTrackTransformer:
         return chart_track_df
 
 
+class VariantBuilder(Protocol):
+    def build(
+        self, lexicon_df: pd.DataFrame, word_column: str, lexicon_words: Set[str], /
+    ) -> pd.DataFrame: ...
+
+
 class DroppedGVariantBuilder:
     GERUND_SUFFIX = "ing"
     # LyricsTokenizer turns "lovin'" into "lovin", so "loving" also matches as "lovin"
@@ -482,7 +488,9 @@ class DroppedGVariantBuilder:
     # Skips one-syllable words like "king" and "sing" that aren't gerunds
     MIN_GERUND_STEM_LENGTH = 2
 
-    def build(self, lexicon_df, word_column, lexicon_words):
+    def build(
+        self, lexicon_df: pd.DataFrame, word_column: str, lexicon_words: Set[str]
+    ) -> pd.DataFrame:
         words = lexicon_df[word_column]
         stems = words.str.removesuffix(self.GERUND_SUFFIX)
         variants = stems + self.DROPPED_G_SUFFIX
@@ -502,10 +510,10 @@ class EmotionLexiconTransformer:
     LEXICON_COLUMNS = (WORD_COLUMN, EMOTION_COLUMN, ASSOCIATION_COLUMN)
     ASSOCIATED = 1
 
-    def __init__(self, variant_builder):
+    def __init__(self, variant_builder: VariantBuilder) -> None:
         self._variant_builder = variant_builder
 
-    def transform(self, lexicon_df):
+    def transform(self, lexicon_df: pd.DataFrame) -> pd.DataFrame:
         lexicon_df = lexicon_df.dropna(subset=[self.EMOTION_COLUMN])
         lexicon_df = lexicon_df.assign(
             **{
@@ -535,42 +543,12 @@ class EmotionLexiconTransformer:
         return word_emotion_df
 
 
-class WordVadTransformer:
-    WORD_COLUMN = "word"
-    VALENCE_COLUMN = "valence"
-    AROUSAL_COLUMN = "arousal"
-    DOMINANCE_COLUMN = "dominance"
-    LEXICON_COLUMNS = (WORD_COLUMN, VALENCE_COLUMN, AROUSAL_COLUMN, DOMINANCE_COLUMN)
-
-    def __init__(self, variant_builder):
-        self._variant_builder = variant_builder
-
-    def transform(self, lexicon_df):
-        lexicon_df = lexicon_df.dropna()
-        lexicon_df = lexicon_df.assign(
-            **{self.WORD_COLUMN: normalize_name(lexicon_df[self.WORD_COLUMN])}
-        ).drop_duplicates(subset=[self.WORD_COLUMN])
-        word_vad_df = pd.concat(
-            [
-                lexicon_df,
-                self._variant_builder.build(
-                    lexicon_df,
-                    self.WORD_COLUMN,
-                    frozenset(lexicon_df[self.WORD_COLUMN]),
-                ),
-            ],
-            ignore_index=True,
-        )[list(self.LEXICON_COLUMNS)]
-        logger.info("Built VAD scores for %d words", len(word_vad_df))
-        return word_vad_df
-
-
 class EmotionTransformer:
     EMOTION_COLUMN = EmotionLexiconTransformer.EMOTION_COLUMN
     NAME_COLUMN = "name"
     DISPLAY_NAME_COLUMN = "display_name"
 
-    def transform(self, word_emotion_df):
+    def transform(self, word_emotion_df: pd.DataFrame) -> pd.DataFrame:
         emotion_df = (
             word_emotion_df[self.EMOTION_COLUMN]
             .drop_duplicates()
@@ -590,7 +568,9 @@ class WordEmotionTransformer:
     EMOTION_ID_COLUMN = "emotion_id"
     WORD_EMOTION_COLUMNS = (WORD_COLUMN, EMOTION_ID_COLUMN)
 
-    def transform(self, db_emotion_df, word_emotion_df):
+    def transform(
+        self, db_emotion_df: pd.DataFrame, word_emotion_df: pd.DataFrame
+    ) -> pd.DataFrame:
         word_emotion_df = word_emotion_df.merge(
             db_emotion_df,
             how="inner",

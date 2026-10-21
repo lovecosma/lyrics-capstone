@@ -138,13 +138,6 @@ create table word_emotion (
   primary key (word, emotion_id)
 );
 
-create table word_vad (
-  word varchar(50) primary key,
-  valence decimal(4, 3) not null,
-  arousal decimal(4, 3) not null,
-  dominance decimal(4, 3) not null
-);
-
 create table profanity_word (
   word varchar(50) primary key,
   canonical_form_1 varchar(50) not null,

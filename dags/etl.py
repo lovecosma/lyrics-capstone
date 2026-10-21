@@ -7,8 +7,10 @@ from airflow.sdk import dag, task
 
 from services.etl import (
     BillboardExtractor,
+    EmotionLexiconProcessor,
     Extractor,
     Loader,
+    NrcLexiconExtractor,
     TopicProcessor,
     TrackProcessor,
 )
@@ -23,6 +25,8 @@ DATA_DIR = "/opt/airflow/data"
 BILLBOARD_PATH = f"{DATA_DIR}/billboard-hot100-lyrics-main"
 SPOTIFY_PATH = f"{DATA_DIR}/spotify_tracks.csv"
 TOPIC_PATH = f"{DATA_DIR}/topics.csv"
+NRC_LEXICON_DIR = f"{DATA_DIR}/NRC-Emotion-Lexicon-v0.92"
+EMOTION_LEXICON_PATH = f"{NRC_LEXICON_DIR}/emotion-lexicon.txt"
 
 
 @dag(
@@ -61,7 +65,16 @@ def etl_dag():
             TopicProcessor(Extractor(conn), Loader(conn), TOPIC_PATH).process()
         engine.dispose()
 
-    schema_sql >> views_sql >> load_tracks() >> load_topics()
+    @task()
+    def load_emotion_lexicon():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        with engine.begin() as conn:
+            EmotionLexiconProcessor(
+                NrcLexiconExtractor(conn), Loader(conn), EMOTION_LEXICON_PATH
+            ).process()
+        engine.dispose()
+
+    schema_sql >> views_sql >> load_tracks() >> load_topics() >> load_emotion_lexicon()
 
 
 etl_dag()
