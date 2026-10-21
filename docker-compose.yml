@@ -10,10 +10,13 @@ services:
       POSTGRES_DB: ${DB_DATABASE}
     ports:
       - 5433:5432
+    volumes:
+      - pgdata:/var/lib/postgresql
   airflow:                       
     image: apache/airflow:latest 
     container_name: airflow      
     hostname: airflow           
+    user: "${AIRFLOW_UID:-50000}:0"
     command: airflow standalone
     environment:
       PYTHONPATH: /opt/airflow
@@ -24,3 +27,7 @@ services:
       - ./logs:/opt/airflow/logs 
       - ./data:/opt/airflow/data
       - ./services:/opt/airflow/services
+      - ./sql:/opt/airflow/sql
+
+volumes:
+  pgdata:
