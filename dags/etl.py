@@ -5,12 +5,25 @@ from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 from airflow.sdk import dag, task
 
+from services.etl import (
+    BillboardExtractor,
+    Extractor,
+    Loader,
+    TopicProcessor,
+    TrackProcessor,
+)
+
 logger = logging.getLogger(__name__)
 
 SQL_DIR = "/opt/airflow/sql"
 SCHEMA_PATH = "lyrics-schema.sql"
 VIEWS_PATH = "lyrics-views.sql"
 CONN_ID = "billboard-postgres"
+DATA_DIR = "/opt/airflow/data"
+BILLBOARD_PATH = f"{DATA_DIR}/billboard-hot100-lyrics-main"
+SPOTIFY_PATH = f"{DATA_DIR}/spotify_tracks.csv"
+TOPIC_PATH = f"{DATA_DIR}/topics.csv"
+
 
 @dag(
     schedule=None,
@@ -25,7 +38,7 @@ def etl_dag():
         sql=SCHEMA_PATH,
         conn_id=CONN_ID,
     )
-    
+
     views_sql = SQLExecuteQueryOperator(
         task_id="billboard_views",
         sql=VIEWS_PATH,
@@ -33,14 +46,22 @@ def etl_dag():
     )
 
     @task()
-    def run_etl():
-        logger.info("Connecting to billboard-postgres")
-        hook = PostgresHook(postgres_conn_id=CONN_ID)
-        # engine = hook.get_sqlalchemy_engine()
-        # etl_processor = ETLProcessor(engine, CSV_PATH)
-        # etl_processor.process()
-        # engine.dispose()
-        # logger.info("Disposed songs-postgres engine")
+    def load_tracks():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        with engine.begin() as conn:
+            TrackProcessor(
+                BillboardExtractor(conn), Loader(conn), BILLBOARD_PATH, SPOTIFY_PATH
+            ).process()
+        engine.dispose()
+
+    @task()
+    def load_topics():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        with engine.begin() as conn:
+            TopicProcessor(Extractor(conn), Loader(conn), TOPIC_PATH).process()
+        engine.dispose()
+
+    schema_sql >> views_sql >> load_tracks() >> load_topics()
 
 
 etl_dag()

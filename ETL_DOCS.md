@@ -1,0 +1,178 @@
+# ETL Documentation
+
+## Extractor
+- Inputs: DB Connection
+- Purpose: 
+  - Base extractor that reads CSVs, word lists and DB tables into the pipeline
+- Interesting Parts: 
+  - Passes any pandas read_csv options through, so subclasses and callers can tune parsing
+  - Reads a batch of tracks by ID with one parameterized `any(:track_ids)` query
+  - Reads word lists as a frozenset, skipping blank lines and `#` comments
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - Pandas dataframes, or a frozenset for word lists
+
+
+## Billboard Extractor(Extractor)
+- Inputs: DB Connection
+- Purpose: provides basic extraction functionality from Extractor and adds functionality to extracts CSV dataframe from each each of 25 billboard year end chart listing
+- Interesting Parts: 
+  - Matches files on file name glob in given directory
+  - Extract chart years from file names
+- Key Tech:
+  - pathlib (`Path.glob`) to find the yearly CSVs
+  - pandas
+  - re - regex for year extraction
+- Outputs: 
+  - Pandas dataframe with billboard chart listings
+
+
+## Loader
+- Inputs: DB Connection
+- Purpose: 
+  - Write dataframes into the billboard_lyrics schema
+- Interesting Parts: 
+  - Three ways to write: append with, bulk insert with Postgres, or update existing rows by key
+  - bulk inserts with COPY and updates use the raw psycopg connection under SQLAlchemy, for speed on large batches
+  - COPY is used for the lyrics analysis results (lyrics_metric, lyrics_ngram_metric, lyrics_topic). They're written batch by batch and n-grams produce many rows per track, so streaming rows in one COPY is much faster than loading rows one by one
+  - Converts missing values (NaN, NA) to None so they load as NULL
+  - Builds table and column names with `psycopg.sql` identifiers, so names are quoted safely
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+  - psycopg (COPY, executemany)
+- Outputs: 
+  - No returned output - writes data to the DB
+
+
+## Track Processor
+- Inputs: BillboardExtractor, Loader, Billboard directory path, Spotify CSV path
+- Purpose: 
+  - Orchestrate loading of tracks, charts, and chart tracks
+  - merges Billboard chart listings with Spotify audio features 
+- Interesting Parts: 
+  - Matches Billboard rows to Spotify tracks by normalized track and artist names (TrackMerger)
+  - Loads tracks before chart listings, then reads them back to get the database IDs that link them
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to DB
+
+
+## Track Merger
+- Inputs: Billboard dataframe, Spotify dataframe
+- Purpose: 
+  - Match each Billboard chart listing to its Spotify track to attach audio features
+- Interesting Parts: 
+  Steps following Billboard's 2003 "Crazy in Love" by "Beyonce":
+    1. Normalize names: make both sources spell things the same
+      - Lowercases, strips accents and punctuation, and collapses whitespace
+      - Track names get several match spellings: without a "(feat. ...)" credit, without remaster/remix tags, without any bracketed or dashed suffix, and with trailing brackets stripped one at a time
+      - Artist names keep only the primary artist (before "feat."), apply known aliases (Pink → P!nk), and drop a leading "the" and the word "and"
+      - Also stores the lead artist, the first name in a credit like "Drake, Kanye West & Eminem"
+      - Example: Billboard's "Beyonce" and Spotify's "Beyoncé" both become "beyonce", and Spotify's "Crazy In Love (feat. Jay-Z)" becomes "crazyinlove", same as Billboard's "Crazy in Love"
+    2. Find candidates: merge Billboard and Spotify rows on any shared track spelling
+      - Example: gives every Spotify "Crazy in Love", including covers by Emeli Sandé and SEVENTEEN and Beyoncé's live versions
+    3. Match artists: keep only pairs where the artists agree
+      - Exact (same full credit), lead artist (first name in a group credit), or featured (the Spotify artist starts the Billboard credit)
+      - Example: "beyonce" = "beyonce" is an exact match; the covers are dropped
+    4. Skip alternate versions: drop Live, Acoustic, Remix, etc. unless the Billboard title says the same
+      - Keeps the audio features of the version that actually charted
+      - Example: "Crazy In Love - Live" and "Crazy In Love - Homecoming Live" are dropped
+    5. Pick the best candidate per Billboard row. Rank what's left and keep the top one
+      - Exact artist → earliest year (usually the original) → no title suffix → most popular
+      - Example: the 2003 "Crazy In Love (feat. Jay-Z)" wins
+    6. Join back: left-join the winning Spotify columns (energy, tempo, ...) onto the Billboard rows by their original index
+      - Songs with no match stay
+      - Example: the Billboard row gets the 2003 recording's audio features, like tempo 99.165
+- Key Tech:
+  - unicodedata (NFKD) to strip accents
+  - re patterns for punctuation, featured credits and version suffixes
+  - pandas
+- Outputs: 
+  - Billboard dataframe with Spotify columns joined 
+
+
+## Chart Transformer
+- Inputs: merged track dataframe (from TrackMerger)
+- Purpose: 
+  - Build one chart row per Billboard year-end chart
+- Interesting Parts: 
+  - Takes the unique chart years from the track rows
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe with a single year column, ready to load into the chart table
+
+
+## Track Transformer
+- Inputs: merged track dataframe (from TrackMerger)
+- Purpose: 
+  - Build one track row per unique song (title + artist), with lyrics and Spotify audio features
+- Interesting Parts: 
+  - Songs that charted in several years are deduplicated, keeping the earliest year's row (stable sort, so ties keep their original order)
+  - Renames track_name to title and keeps only the track table's columns
+  - Casts key, mode, time_signature and duration_ms to nullable integers, so unmatched songs load as NULL instead of failing
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of unique tracks, ready to load into the track table
+
+
+## ChartTrack Transformer
+- Inputs: track and chart dataframes read back from the DB, merged track dataframe (from TrackMerger)
+- Purpose: 
+  - Link each track to every chart it appeared on, with its rank that year
+- Interesting Parts: 
+  - Matches DB tracks back to the source rows on title + artist to recover each chart year and rank
+  - Swaps chart years for DB chart IDs, so the output only holds foreign keys and rank
+  - A song that charted in several years gets one row per year
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of track_id, chart_id and rank, ready to load into the chart_track table
+
+
+## TopicProcessor
+- Inputs: Extractor, Loader, topics CSV path
+- Purpose: 
+  - Load the 10 lyric topics used for topic analysis into the DB
+- Interesting Parts: 
+  - Topics are hand-written in a CSV (name, display name, description), so they can change without code changes
+  - TopicsTransformer keeps only the topic columns and drops duplicate names and incomplete rows
+  - Descriptions are the criteria in the TypeSafe questions used by lyrics topic analysis
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the topic table
+
+
+## Lookup Table Transformer
+- Inputs: lookup dataframe (from a hand-written CSV)
+- Purpose: 
+  - Base transformer for small lookup tables like topics and economic indicators
+- Interesting Parts: 
+  - Subclasses only set three class attributes: KEY_COLUMN, COLUMNS and ROW_DESCRIPTION (used in the log line)
+  - Keeps only COLUMNS, drops rows with a duplicate KEY_COLUMN, then drops incomplete rows
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Cleaned dataframe, ready to load into its lookup table
+
+
+## Topics Transformer(LookupTableTransformer)
+- Inputs: topics dataframe (from topics CSV)
+- Purpose: 
+  - Clean the topics CSV into rows for the topic table
+- Interesting Parts: 
+  - All logic lives in LookupTableTransformer; TopicsTransformer only sets the key column (name), the columns to keep and a log label
+  - Keeps only name, display_name and description, drops duplicate names, then drops incomplete rows
+  - Shares its base class with EconomicIndicatorTransformer, so topics and economic indicators are cleaned the same way
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of topics, ready to load into the topic table

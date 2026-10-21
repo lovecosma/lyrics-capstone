@@ -95,8 +95,10 @@ class Extractor:
 
 
 class BillboardExtractor(Extractor):
+    # Selects one lyrics CSV per chart year and skips other files
     LYRICS_FILE_GLOB = "billboard-year-end-*-lyrics.csv"
     LYRICS_COLUMNS = ("rank", "track_name", "artist_name", "lyrics")
+    # Reads the chart year from a file name like "billboard-year-end-2024-lyrics.csv"
     CHART_YEAR_PATTERN = re.compile(
         r"billboard-year-end-(?P<chart_year>\d{4})-lyrics\.csv$"
     )
@@ -119,9 +121,21 @@ class BillboardExtractor(Extractor):
             self.extract_from_csv(file_path)
             .set_axis(self.LYRICS_COLUMNS, axis="columns")
             .pipe(self._strip_names)
-            .dropna(subset=[self.LYRICS_COLUMN])
+            .pipe(self._drop_missing_lyrics, file_path)
             .assign(chart_year=self._get_chart_year(file_path))
         )
+
+    def _drop_missing_lyrics(self, df, file_path):
+        lyrics_df = df.dropna(subset=[self.LYRICS_COLUMN])
+        dropped_row_count = len(df) - len(lyrics_df)
+        if dropped_row_count:
+            logger.info(
+                "Dropped %d of %d rows with no lyrics from %s",
+                dropped_row_count,
+                len(df),
+                file_path.name,
+            )
+        return lyrics_df
 
     def _strip_names(self, df):
         return df.assign(

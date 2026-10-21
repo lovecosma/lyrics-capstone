@@ -15,23 +15,30 @@ def normalize_name(names):
 class TrackMerger:
     WORD_SEPARATOR = " "
     UNICODE_DECOMPOSITION_FORM = "NFKD"
+    # Drops punctuation so "Don't Stop" and "Dont Stop" match
     PUNCTUATION_PATTERN = re.compile(r"[^\w\s]")
+    # Collapses runs of spaces, tabs and newlines into one separator
     WHITESPACE_PATTERN = re.compile(r"\s+")
+    # Splits "Drake feat. Rihanna" so the primary artist is "Drake"
     FEATURED_ARTIST_SEPARATOR = re.compile(r"\s+feat\.\s+", re.IGNORECASE)
+    # Removes a bracketed credit like "Song (feat. Rihanna)" from a track name
     FEATURED_CREDIT_PATTERN = re.compile(
         r"\s*[(\[]\s*(?:feat\.?|ft\.?|featuring|with)\s+(?P<artists>[^)\]]+)[)\]]",
         re.IGNORECASE,
     )
+    # Removes remaster and remix tags like "Song (Remastered 2011)" or "Song - Remaster"
     VERSION_SUFFIX_PATTERN = re.compile(
         r"\s*[(\[]\s*(?:remaster(?:ed)?(?:\s+\d{4})?|remix)\s*[)\]]"
         r"|\s*-\s*remaster(?:ed)?(?:\s+\d{4})?$",
         re.IGNORECASE,
     )
+    # Matches any bracketed or dashed suffix, like "Song (Live)" or "Song - Radio Edit"
     TITLE_SUFFIX_PATTERN = re.compile(r"\s*[(\[][^)\]]*[)\]]|\s+-\s+.*$")
     # Stripped one at a time, so "Song (Subtitle) [Radio Version]" also matches as
     # "Song Subtitle", which is how Billboard writes it
     TRAILING_BRACKET_PATTERN = re.compile(r"\s*[(\[][^)\]]*[)\]]\s*$")
     TRACK_SUFFIX_PATTERNS = (VERSION_SUFFIX_PATTERN, TITLE_SUFFIX_PATTERN)
+    # Flags suffixes marking a different recording, like "Live" or "Acoustic"
     ALTERNATE_VERSION_PATTERN = re.compile(
         r"\b(?:remix|live|acoustic|unplugged|mix|instrumental|demo|sessions?|extended"
         r"|orchestral|synthesis|dub|broadway)\b"
@@ -53,7 +60,9 @@ class TrackMerger:
     )
     # Spellings that differ between sources, e.g. "A$AP Ferg" and "ASAP Ferg"
     ARTIST_CHARACTER_REPLACEMENTS = MappingProxyType({"$": "s"})
+    # Drops a leading "the" so "The Weeknd" matches "Weeknd"
     LEADING_ARTICLE_PATTERN = re.compile(r"^the\s+")
+    # Treats "and" like "&", which punctuation stripping already removed
     CONJUNCTION_PATTERN = re.compile(r"\band\b")
     BILLBOARD_ROW_COLUMN = "billboard_row"
     TRACK_NAME_COLUMN = "track_name"
@@ -612,22 +621,22 @@ class ProfanityWordTransformer:
         return profanity_df
 
 
-class ReferenceTableTransformer:
+class LookupTableTransformer:
     KEY_COLUMN = None
     COLUMNS = ()
     ROW_DESCRIPTION = None
 
-    def transform(self, reference_df):
-        reference_df = (
-            reference_df[list(self.COLUMNS)]
+    def transform(self, lookup_df):
+        lookup_df = (
+            lookup_df[list(self.COLUMNS)]
             .drop_duplicates(subset=[self.KEY_COLUMN])
             .dropna()
         )
-        logger.info("Built %d %s", len(reference_df), self.ROW_DESCRIPTION)
-        return reference_df
+        logger.info("Built %d %s", len(lookup_df), self.ROW_DESCRIPTION)
+        return lookup_df
 
 
-class EconomicIndicatorTransformer(ReferenceTableTransformer):
+class EconomicIndicatorTransformer(LookupTableTransformer):
     KEY_COLUMN = "code"
     COLUMNS = (KEY_COLUMN, "display_name", "unit", "description")
     ROW_DESCRIPTION = "economic indicators"
@@ -652,7 +661,7 @@ class EconomicObservationTransformer:
         return observation_df
 
 
-class TopicsTransformer(ReferenceTableTransformer):
+class TopicsTransformer(LookupTableTransformer):
     KEY_COLUMN = "name"
     COLUMNS = (KEY_COLUMN, "display_name", "description")
     ROW_DESCRIPTION = "topics"
