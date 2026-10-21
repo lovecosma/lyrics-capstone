@@ -262,3 +262,32 @@
   - pandas
 - Outputs: 
   - Dataframe of word and emotion_id, ready to load into the word_emotion table
+
+
+## Profanity Processor
+- Inputs: Extractor, Loader, profanity CSV path
+- Purpose: 
+  - Load the profanity word list (with categories and severity ratings) that the strong_profanity_word view uses to find and mask strong profanity in lyric n-grams
+- Interesting Parts: 
+  - ProfanityWordTransformer lowercases and trims words but keeps punctuation, so spellings like "a_s_s" don't merge into ordinary words
+  - Keeps only the first category and drops duplicate words
+  - Skips words already in the table, so it's safe to re-run
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the profanity_word table
+
+
+## Profanity Word Transformer
+- Inputs: profanity dataframe (from the profanity CSV)
+- Purpose: 
+  - Clean the profanity CSV into rows for the profanity_word table
+- Interesting Parts: 
+  - Renames text to word and category_1 to category; category_2 and category_3 are dropped
+  - Lowercases and trims words but keeps punctuation
+  - Drops rows with no word and duplicates
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of word, canonical forms, category and severity, ready to load into the profanity_word table

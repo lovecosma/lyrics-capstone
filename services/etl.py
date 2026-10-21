@@ -385,12 +385,14 @@ class EmotionLexiconProcessor:
 
 
 class ProfanityProcessor:
-    def __init__(self, extractor, loader, profanity_csv_path):
+    def __init__(
+        self, extractor: Extractor, loader: Loader, profanity_csv_path: str | Path
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._profanity_csv_path = profanity_csv_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting profanity ETL")
         profanity_df = ProfanityWordTransformer().transform(
             self._extractor.extract_from_csv(self._profanity_csv_path)

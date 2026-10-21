@@ -596,7 +596,7 @@ class ProfanityWordTransformer:
         "severity_description",
     )
 
-    def transform(self, profanity_df):
+    def transform(self, profanity_df: pd.DataFrame) -> pd.DataFrame:
         profanity_df = profanity_df.rename(
             columns={
                 self.TEXT_COLUMN: self.WORD_COLUMN,

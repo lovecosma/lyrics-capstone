@@ -11,6 +11,7 @@ from services.etl import (
     Extractor,
     Loader,
     NrcLexiconExtractor,
+    ProfanityProcessor,
     TopicProcessor,
     TrackProcessor,
 )
@@ -27,6 +28,7 @@ SPOTIFY_PATH = f"{DATA_DIR}/spotify_tracks.csv"
 TOPIC_PATH = f"{DATA_DIR}/topics.csv"
 NRC_LEXICON_DIR = f"{DATA_DIR}/NRC-Emotion-Lexicon-v0.92"
 EMOTION_LEXICON_PATH = f"{NRC_LEXICON_DIR}/emotion-lexicon.txt"
+PROFANITY_PATH = f"{DATA_DIR}/profanity_en.csv"
 
 
 @dag(
@@ -74,7 +76,21 @@ def etl_dag():
             ).process()
         engine.dispose()
 
-    schema_sql >> views_sql >> load_tracks() >> load_topics() >> load_emotion_lexicon()
+    @task()
+    def load_profanity():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        with engine.begin() as conn:
+            ProfanityProcessor(Extractor(conn), Loader(conn), PROFANITY_PATH).process()
+        engine.dispose()
+
+    (
+        schema_sql
+        >> views_sql
+        >> load_tracks()
+        >> load_topics()
+        >> load_emotion_lexicon()
+        >> load_profanity()
+    )
 
 
 etl_dag()
