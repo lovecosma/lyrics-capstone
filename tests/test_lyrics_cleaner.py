@@ -1,7 +1,7 @@
 import pytest
 from lyrics_helpers import song
 
-from lyrics_analysis import LyricsCleaner
+from services.lyrics_analysis import LyricsCleaner
 
 LINE_BEFORE = "I walked into the room"
 LINE_AFTER = "and the lights went down"

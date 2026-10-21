@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import EmotionTransformer
+from services.transformers import EmotionTransformer
 
 EMOTION_COLUMN = "emotion"
 NAME_COLUMN = "name"

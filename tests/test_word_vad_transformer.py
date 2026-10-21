@@ -1,7 +1,7 @@
 import pandas as pd
 from fake_variant_builder import FakeVariantBuilder
 
-from transformers import WordVadTransformer
+from services.transformers import WordVadTransformer
 
 WORD_COLUMN = WordVadTransformer.WORD_COLUMN
 VALENCE_COLUMN = WordVadTransformer.VALENCE_COLUMN

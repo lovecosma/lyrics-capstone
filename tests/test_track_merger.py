@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import TrackMerger
+from services.transformers import TrackMerger
 
 TRACK_NAME = "Lemon"
 ACCENTED_TRACK_NAME = "Lémon"

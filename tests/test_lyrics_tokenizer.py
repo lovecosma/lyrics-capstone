@@ -1,7 +1,7 @@
 import pytest
 from lyrics_helpers import song
 
-from lyrics_analysis import LyricsTokenizer
+from services.lyrics_analysis import LyricsTokenizer
 
 FIRST_LINE = "midnight city"
 SECOND_LINE = "neon skies"

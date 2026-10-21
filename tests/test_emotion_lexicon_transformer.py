@@ -1,7 +1,7 @@
 import pandas as pd
 from fake_variant_builder import FakeVariantBuilder
 
-from transformers import EmotionLexiconTransformer
+from services.transformers import EmotionLexiconTransformer
 
 WORD_COLUMN = EmotionLexiconTransformer.WORD_COLUMN
 EMOTION_COLUMN = EmotionLexiconTransformer.EMOTION_COLUMN

@@ -1,7 +1,7 @@
 import pandas as pd
 import requests
 
-from genre_enrichment import TrackGenreEnricher
+from services.genre_enrichment import TrackGenreEnricher
 
 TITLE = "First Person Shooter"
 ARTIST_NAME = "Drake"

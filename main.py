@@ -5,7 +5,7 @@ from dynaconf import Dynaconf
 from sqlalchemy import create_engine
 from typesafe_sdk import AsyncTypeSafeClient
 
-from etl import (
+from services.etl import (
     TOPIC_TABLE,
     TRACK_ID_COLUMN,
     BillboardExtractor,
@@ -20,14 +20,14 @@ from etl import (
     TopicProcessor,
     TrackProcessor,
 )
-from genre_enrichment import (
+from services.genre_enrichment import (
     GenreEnricher,
     GenreEnrichmentProcessor,
     SnapshotGenreEnricher,
     TrackGenreEnricher,
 )
-from itunes import ITunesClient
-from lyrics_analysis import (
+from services.itunes import ITunesClient
+from services.lyrics_analysis import (
     LyricsAnalysisProcessor,
     LyricsAnalyzer,
     LyricsTopicAnalyzer,

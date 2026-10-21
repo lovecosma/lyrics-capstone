@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import TopicsTransformer
+from services.transformers import TopicsTransformer
 
 NAME_COLUMN = "name"
 DISPLAY_NAME_COLUMN = "display_name"

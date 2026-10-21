@@ -9,7 +9,7 @@ from nltk.tokenize import RegexpTokenizer
 from nltk.util import everygrams
 from typesafe_sdk import Choice, Noul, TypeSafeError
 
-from etl import (
+from services.etl import (
     LYRICS_METRIC_TABLE,
     LYRICS_NGRAM_METRIC_TABLE,
     LYRICS_TOPIC_TABLE,

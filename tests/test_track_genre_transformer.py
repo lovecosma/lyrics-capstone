@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import TrackGenreTransformer
+from services.transformers import TrackGenreTransformer
 
 TRACK_ID_COLUMN = "track_id"
 GENRE_ID_COLUMN = "genre_id"

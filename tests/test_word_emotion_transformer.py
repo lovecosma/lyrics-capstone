@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import WordEmotionTransformer
+from services.transformers import WordEmotionTransformer
 
 WORD_COLUMN = "word"
 EMOTION_COLUMN = "emotion"

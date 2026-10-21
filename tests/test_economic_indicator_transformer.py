@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import EconomicIndicatorTransformer
+from services.transformers import EconomicIndicatorTransformer
 
 CODE_COLUMN = "code"
 DISPLAY_NAME_COLUMN = "display_name"

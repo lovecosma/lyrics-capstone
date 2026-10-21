@@ -13,7 +13,7 @@ from typesafe_sdk import (
     TypeSafeRateLimitError,
 )
 
-from lyrics_analysis import LyricsCleaner, LyricsTopicAnalyzer
+from services.lyrics_analysis import LyricsCleaner, LyricsTopicAnalyzer
 
 PRIMARY_TOPIC_QUESTION = LyricsTopicAnalyzer.PRIMARY_TOPIC_QUESTION_ID
 OTHER_TOPIC = LyricsTopicAnalyzer.OTHER_TOPIC

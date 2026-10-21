@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import ChartTrackTransformer
+from services.transformers import ChartTrackTransformer
 
 TRACK_ID_COLUMN = "track_id"
 CHART_ID_COLUMN = "chart_id"

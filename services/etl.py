@@ -7,7 +7,7 @@ import pandas as pd
 from psycopg import sql
 from sqlalchemy import text
 
-from transformers import (
+from services.transformers import (
     BroadGenreTransformer,
     ChartTrackTransformer,
     ChartTransformer,
@@ -244,7 +244,6 @@ class Loader:
 
 
 class TrackProcessor:
-    # The CSV's unnamed index and Spotify's own track id, which would clash with ours
     SPOTIFY_ID_COLUMNS = ("Unnamed: 0", "track_id")
 
     def __init__(self, extractor, loader, billboard_directory_path, spotify_csv_path):

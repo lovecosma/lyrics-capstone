@@ -5,8 +5,8 @@ from typing import NamedTuple
 import pandas as pd
 import requests
 
-from etl import GENRE_TABLE, TRACK_GENRE_TABLE, TRACK_TABLE
-from transformers import GenreTransformer, TrackGenreTransformer, TrackMerger
+from services.etl import GENRE_TABLE, TRACK_GENRE_TABLE, TRACK_TABLE
+from services.transformers import GenreTransformer, TrackGenreTransformer, TrackMerger
 
 logger = logging.getLogger(__name__)
 

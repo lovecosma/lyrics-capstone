@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import TrackTransformer
+from services.transformers import TrackTransformer
 
 TRACK_NAME_COLUMN, ARTIST_NAME_COLUMN = TrackTransformer.SONG_KEY_COLUMNS
 TITLE_COLUMN = TrackTransformer.COLUMN_RENAMES[TRACK_NAME_COLUMN]

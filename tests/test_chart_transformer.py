@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import ChartTransformer
+from services.transformers import ChartTransformer
 
 CHART_YEAR_COLUMN = "chart_year"
 YEAR_COLUMN = "year"

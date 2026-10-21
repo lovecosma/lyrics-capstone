@@ -2,7 +2,7 @@ import pandas as pd
 import pytest
 from lyrics_helpers import song
 
-from lyrics_analysis import LyricsAnalyzer
+from services.lyrics_analysis import LyricsAnalyzer
 
 TRACK_ID = 1
 OTHER_TRACK_ID = 2

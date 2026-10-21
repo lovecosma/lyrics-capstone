@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import GenreTransformer
+from services.transformers import GenreTransformer
 
 GENRE_COLUMN = "genre"
 NAME_COLUMN = "name"

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import DroppedGVariantBuilder
+from services.transformers import DroppedGVariantBuilder
 
 WORD_COLUMN = "word"
 EMOTION_COLUMN = "emotion"

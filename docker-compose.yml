@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:latest
+    container_name: pg
+    hostname: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    ports:
+      - 5433:5432
+  airflow:                       
+    image: apache/airflow:latest 
+    container_name: airflow      
+    hostname: airflow           
+    command: airflow standalone
+    environment:
+      PYTHONPATH: /opt/airflow
+    ports:
+      - 8080:8080                
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs 
+      - ./data:/opt/airflow/data
+      - ./services:/opt/airflow/services

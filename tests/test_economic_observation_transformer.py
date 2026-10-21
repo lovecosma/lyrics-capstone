@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from transformers import EconomicObservationTransformer
+from services.transformers import EconomicObservationTransformer
 
 INDICATOR_ID_COLUMN = "economic_indicator_id"
 CODE_COLUMN = "code"
