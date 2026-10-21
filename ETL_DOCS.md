@@ -44,6 +44,21 @@
   - Pandas dataframe of lexicon rows
 
 
+## FRED Extractor(Extractor)
+- Inputs: DB Connection
+- Purpose: 
+  - Read FRED series CSVs (one per indicator code) into a single long dataframe of observations
+- Interesting Parts: 
+  - Finds each file by indicator code (UNRATE → UNRATE.csv) in the given directory
+  - Each FRED file names its value column after the code, so it's renamed to value and a code column is added before combining
+  - Parses observation dates and reads FRED's "." as missing
+- Key Tech:
+  - pathlib
+  - pandas
+- Outputs: 
+  - Pandas dataframe of observation_date, value and code for every series
+
+
 ## Loader
 - Inputs: DB Connection
 - Purpose: 
@@ -171,7 +186,7 @@
 - Purpose: 
   - Base transformer for small lookup tables like topics and economic indicators
 - Interesting Parts: 
-  - Subclasses only set three class attributes: KEY_COLUMN, COLUMNS and ROW_DESCRIPTION (used in the log line)
+  - Subclasses only set three class attributes: KEY_COLUMN, COLUMNS and ROW_DESCRIPTION (used in the log line); they're declared as ClassVars with no defaults, so a subclass that forgets one fails with an AttributeError instead of silently using None
   - Keeps only COLUMNS, drops rows with a duplicate KEY_COLUMN, then drops incomplete rows
 - Key Tech:
   - pandas
@@ -291,3 +306,42 @@
   - pandas
 - Outputs: 
   - Dataframe of word, canonical forms, category and severity, ready to load into the profanity_word table
+
+
+## Economic Indicator Processor
+- Inputs: FredExtractor, Loader, economic indicators CSV path, FRED directory path
+- Purpose: 
+  - Load economic indicators (unemployment, consumer sentiment, birth rate) and their FRED observations, to compare lyric trends against the economy
+- Interesting Parts: 
+  - The indicators CSV drives which FRED files are read: each indicator's code names its series file (UNRATE → fred/UNRATE.csv)
+  - Loads indicators first, then reads them back to link each observation to its indicator ID
+  - Drops observations FRED marks as missing (".")
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the economic_indicator and economic_observation tables
+
+
+## Economic Observation Transformer
+- Inputs: economic indicator dataframe read back from the DB, observation dataframe (from FredExtractor)
+- Purpose: 
+  - Link each FRED observation to its economic indicator by ID
+- Interesting Parts: 
+  - Drops observations with no value (FRED's "." for missing)
+  - Joins on indicator code to replace codes for the DB indicator IDs, so the output only holds a foreign key, date and value
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of economic_indicator_id, observation_date and value, ready to load into the economic_observation table
+
+
+## Economic Indicator Transformer(LookupTableTransformer)
+- Inputs: economic indicators dataframe (from economic indicators CSV)
+- Purpose: 
+  - Clean the economic indicators CSV into rows for the economic_indicator table
+- Interesting Parts: 
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of economic indicators, ready to load into the economic_indicator table

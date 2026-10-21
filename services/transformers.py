@@ -648,7 +648,9 @@ class EconomicObservationTransformer:
     VALUE_COLUMN = "value"
     OBSERVATION_COLUMNS = (INDICATOR_ID_COLUMN, OBSERVATION_DATE_COLUMN, VALUE_COLUMN)
 
-    def transform(self, db_indicator_df, observation_df):
+    def transform(
+        self, db_indicator_df: pd.DataFrame, observation_df: pd.DataFrame
+    ) -> pd.DataFrame:
         observation_df = observation_df.dropna(subset=[self.VALUE_COLUMN]).merge(
             db_indicator_df, how="inner", on=self.CODE_COLUMN
         )[list(self.OBSERVATION_COLUMNS)]

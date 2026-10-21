@@ -7,8 +7,10 @@ from airflow.sdk import dag, task
 
 from services.etl import (
     BillboardExtractor,
+    EconomicIndicatorProcessor,
     EmotionLexiconProcessor,
     Extractor,
+    FredExtractor,
     Loader,
     NrcLexiconExtractor,
     ProfanityProcessor,
@@ -29,6 +31,8 @@ TOPIC_PATH = f"{DATA_DIR}/topics.csv"
 NRC_LEXICON_DIR = f"{DATA_DIR}/NRC-Emotion-Lexicon-v0.92"
 EMOTION_LEXICON_PATH = f"{NRC_LEXICON_DIR}/emotion-lexicon.txt"
 PROFANITY_PATH = f"{DATA_DIR}/profanity_en.csv"
+ECONOMIC_INDICATOR_PATH = f"{DATA_DIR}/economic_indicators.csv"
+FRED_PATH = f"{DATA_DIR}/fred"
 
 
 @dag(
@@ -83,6 +87,15 @@ def etl_dag():
             ProfanityProcessor(Extractor(conn), Loader(conn), PROFANITY_PATH).process()
         engine.dispose()
 
+    @task()
+    def load_economic_indicators():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        with engine.begin() as conn:
+            EconomicIndicatorProcessor(
+                FredExtractor(conn), Loader(conn), ECONOMIC_INDICATOR_PATH, FRED_PATH
+            ).process()
+        engine.dispose()
+
     (
         schema_sql
         >> views_sql
@@ -90,6 +103,7 @@ def etl_dag():
         >> load_topics()
         >> load_emotion_lexicon()
         >> load_profanity()
+        >> load_economic_indicators()
     )
 
 

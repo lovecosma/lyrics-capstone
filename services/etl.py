@@ -163,7 +163,9 @@ class FredExtractor(Extractor):
     # FRED marks a missing observation with "."
     MISSING_VALUE = "."
 
-    def extract_series(self, directory_path, codes):
+    def extract_series(
+        self, directory_path: str | Path, codes: Sequence[str]
+    ) -> pd.DataFrame:
         logger.info(
             "Extracting %d FRED series from directory at %s", len(codes), directory_path
         )
@@ -174,7 +176,9 @@ class FredExtractor(Extractor):
         logger.info("Extracted %d FRED observations", len(series_df))
         return series_df
 
-    def _extract_one_series(self, directory_path, code):
+    def _extract_one_series(
+        self, directory_path: str | Path, code: str
+    ) -> pd.DataFrame:
         file_path = Path(directory_path) / f"{code}{self.SERIES_FILE_SUFFIX}"
         return (
             self.extract_from_csv(
@@ -407,14 +411,18 @@ class ProfanityProcessor:
 
 class EconomicIndicatorProcessor:
     def __init__(
-        self, extractor, loader, economic_indicator_csv_path, fred_directory_path
-    ):
+        self,
+        extractor: FredExtractor,
+        loader: Loader,
+        economic_indicator_csv_path: str | Path,
+        fred_directory_path: str | Path,
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._economic_indicator_csv_path = economic_indicator_csv_path
         self._fred_directory_path = fred_directory_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting economic indicator ETL")
         indicator_df = EconomicIndicatorTransformer().transform(
             self._extractor.extract_from_csv(self._economic_indicator_csv_path)
