@@ -1,5 +1,16 @@
 # ETL Documentation
 
+## ETL DAG
+Runs in this order:
+  1. billboard_schema and billboard_views: create the tables and views from sql/
+  2. etl: load tracks, topics, the emotion lexicon, profanity words and economic indicators, one after another, each in its own transaction
+  3. lyrics_analysis: lyric metrics, then lyrics topics (snapshot, then live TypeSafe, then export the snapshot)
+  4. genre_enrichment: iTunes genres (snapshot, then live iTunes search, then export the snapshot), then map genres to broad genres
+- API results are restored from a CSV first, the live step only processes tracks the snapshot didn't cover, and the export adds new results back to the CSV
+- Retrying a failed task is safe
+- Each task opens its own engine from the billboard_postgres connection and disposes of it when done
+
+
 ## Extractor
 - Inputs: DB Connection
 - Purpose: 
@@ -347,6 +358,22 @@
   - Dataframe of economic indicators, ready to load into the economic_indicator table
 
 
+## Batching (run_in_batches)
+- Inputs: DB connection, Extractor, a batch processor (TrackBatchProcessor), batch size
+- Purpose: 
+  - Run long track-by-track work (lyric metrics, topics, genres) in batches, so a failure only loses the batch in progress
+- Interesting Parts: 
+  - A batch processor has three methods (TrackBatchProcessor protocol): select_pending, compute_batch and load_batch
+  - Plans every batch up front: select_pending runs once, and its track IDs are split into batches
+  - For each batch: read the tracks in one transaction, compute outside any transaction (so slow API calls don't hold one open), then write and commit in another
+  - Committed batches are skipped on the next run by select_pending, so a failed run picks up where it stopped
+  - Key Tech:
+  - itertools.batched
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - each processor loads its own data
+
+
 ## Lyrics Analysis Processor
 - Inputs: Extractor, Loader, LyricsAnalyzer
 - Purpose: 
@@ -430,6 +457,20 @@
   - nltk RegexpTokenizer
 - Outputs: 
   - List of lines, each a list of words
+
+
+## Topic Analyzer
+- Inputs: topic dataframe (from the topic table)
+- Purpose: 
+  - Base class for the snapshot and TypeSafe topic analyzers
+- Interesting Parts: 
+  - Holds ANALYSIS_VERSION, which is shared by both analyzers so restored and live results count as the same version
+  - Builds the topic name to topic ID lookup
+  - select_uncategorized skips tracks that already have topics for the current version
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of tracks that still need topics
 
 
 ## Snapshot Lyrics Topic Analyzer(TopicAnalyzer)
