@@ -13,6 +13,7 @@ from services.etl import (
     LYRICS_METRIC_TABLE,
     LYRICS_NGRAM_METRIC_TABLE,
     LYRICS_TOPIC_TABLE,
+    TOPIC_TABLE,
     TRACK_TABLE,
 )
 
@@ -363,11 +364,23 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
         return response.nouls[topic].noul
 
 
-# Replays topics saved from earlier TypeSafe runs instead of classifying again
 class SnapshotLyricsTopicAnalyzer(TopicAnalyzer):
     TITLE_COLUMN = "title"
     ARTIST_NAME_COLUMN = "artist_name"
     TOPIC_COLUMN = "topic"
+    PROBABILITY_COLUMNS = (
+        TopicAnalyzer.PRIMARY_PROBABILITY_COLUMN,
+        TopicAnalyzer.PRESENCE_PROBABILITY_COLUMN,
+    )
+    SNAPSHOT_COLUMNS = (
+        TITLE_COLUMN,
+        ARTIST_NAME_COLUMN,
+        TOPIC_COLUMN,
+        TopicAnalyzer.IS_PRIMARY_COLUMN,
+        *PROBABILITY_COLUMNS,
+        TopicAnalyzer.MODEL_VERSION_COLUMN,
+        TopicAnalyzer.ANALYSIS_VERSION_COLUMN,
+    )
 
     def __init__(self, topic_df, snapshot_df):
         super().__init__(topic_df)
@@ -452,3 +465,64 @@ class LyricsTopicProcessor:
 
     def load_batch(self, batch_result):
         self._loader.copy_to_db(batch_result, LYRICS_TOPIC_TABLE)
+
+
+class LyricsTopicSnapshotProcessor:
+    TRACK_ID_COLUMN = TopicAnalyzer.TRACK_ID_COLUMN
+    TOPIC_ID_COLUMN = TopicAnalyzer.TOPIC_ID_COLUMN
+    TOPIC_NAME_COLUMN = TopicAnalyzer.TOPIC_NAME_COLUMN
+    TITLE_COLUMN = SnapshotLyricsTopicAnalyzer.TITLE_COLUMN
+    ARTIST_NAME_COLUMN = SnapshotLyricsTopicAnalyzer.ARTIST_NAME_COLUMN
+    TOPIC_COLUMN = SnapshotLyricsTopicAnalyzer.TOPIC_COLUMN
+    ANALYSIS_VERSION_COLUMN = TopicAnalyzer.ANALYSIS_VERSION_COLUMN
+    PROBABILITY_COLUMNS = SnapshotLyricsTopicAnalyzer.PROBABILITY_COLUMNS
+    SNAPSHOT_COLUMNS = SnapshotLyricsTopicAnalyzer.SNAPSHOT_COLUMNS
+    SNAPSHOT_KEY_COLUMNS = (
+        TITLE_COLUMN,
+        ARTIST_NAME_COLUMN,
+        TOPIC_COLUMN,
+        ANALYSIS_VERSION_COLUMN,
+    )
+
+    def __init__(self, extractor, loader, snapshot_csv_path):
+        self._extractor = extractor
+        self._loader = loader
+        self._snapshot_csv_path = snapshot_csv_path
+
+    def process(self):
+        logger.info("Starting lyrics topic snapshot export")
+        snapshot_df = self._extractor.extract_snapshot(
+            self._snapshot_csv_path, self.SNAPSHOT_COLUMNS
+        )
+        db_snapshot_df = self._build_snapshot_rows(
+            self._extractor.extract_from_db(LYRICS_TOPIC_TABLE),
+            self._extractor.extract_from_db(TRACK_TABLE),
+            self._extractor.extract_from_db(TOPIC_TABLE),
+        )
+        merged_snapshot_df = pd.concat(
+            [snapshot_df, db_snapshot_df], ignore_index=True
+        ).drop_duplicates(subset=list(self.SNAPSHOT_KEY_COLUMNS))
+        logger.info(
+            "Added %d rows to the lyrics topic snapshot",
+            len(merged_snapshot_df) - len(snapshot_df),
+        )
+        self._loader.save_to_csv(merged_snapshot_df, self._snapshot_csv_path)
+        logger.info("Completed lyrics topic snapshot export")
+
+    def _build_snapshot_rows(self, lyrics_topic_df, track_df, topic_df):
+        return (
+            lyrics_topic_df.merge(
+                track_df[
+                    [self.TRACK_ID_COLUMN, self.TITLE_COLUMN, self.ARTIST_NAME_COLUMN]
+                ],
+                on=self.TRACK_ID_COLUMN,
+            )
+            .merge(
+                topic_df[[self.TOPIC_ID_COLUMN, self.TOPIC_NAME_COLUMN]],
+                on=self.TOPIC_ID_COLUMN,
+            )
+            .rename(columns={self.TOPIC_NAME_COLUMN: self.TOPIC_COLUMN})
+            .astype(dict.fromkeys(self.PROBABILITY_COLUMNS, float))[
+                list(self.SNAPSHOT_COLUMNS)
+            ]
+        )

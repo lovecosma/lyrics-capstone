@@ -13,13 +13,18 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql
   airflow:                       
-    image: apache/airflow:latest 
+    build: ./airflow
     container_name: airflow      
     hostname: airflow           
     user: "${AIRFLOW_UID:-50000}:0"
     command: airflow standalone
     environment:
       PYTHONPATH: /opt/airflow
+      AIRFLOW_VAR_TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY}
+      AIRFLOW_CONN_BILLBOARD_POSTGRES: >-
+        {"conn_type": "postgres", "host": "pg", "port": 5432,
+        "login": "${DB_USER}", "password": "${DB_PASSWORD}",
+        "schema": "${DB_DATABASE}"}
     ports:
       - 8080:8080                
     volumes:

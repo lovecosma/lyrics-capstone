@@ -63,6 +63,18 @@ class Extractor:
         logger.info("Extracted %d rows from CSV", len(df))
         return df
 
+    def extract_snapshot(
+        self,
+        file_path: str | Path,
+        column_names: Sequence[str],
+        **read_csv_options: Any,
+    ) -> pd.DataFrame:
+        try:
+            return self.extract_from_csv(file_path, **read_csv_options)
+        except (FileNotFoundError, pd.errors.EmptyDataError):
+            logger.warning("No snapshot data at %s; starting from empty", file_path)
+            return pd.DataFrame(columns=list(column_names))
+
     def extract_from_db(self, table_name: str) -> pd.DataFrame:
         logger.info("Extracting %s.%s from the database", LYRICS_SCHEMA, table_name)
         query = f"select * from {LYRICS_SCHEMA}.{table_name}"
@@ -211,8 +223,19 @@ class NrcLexiconExtractor(Extractor):
 
 
 class Loader:
+    TEMP_FILE_SUFFIX = ".tmp"
+
     def __init__(self, connection: Connection) -> None:
         self._connection = connection
+
+    def save_to_csv(self, df: pd.DataFrame, file_path: str | Path) -> None:
+        logger.info("Saving %d rows to CSV at %s", len(df), file_path)
+        file_path = Path(file_path)
+        # Written to a temp file first, so a crash never leaves a half-written CSV
+        temp_path = file_path.with_name(f"{file_path.name}{self.TEMP_FILE_SUFFIX}")
+        df.to_csv(temp_path, index=False)
+        temp_path.replace(file_path)
+        logger.info("Saved CSV at %s", file_path)
 
     def load_to_db(self, df: pd.DataFrame, table_name: str) -> int | None:
         logger.info("Loading %d rows into %s.%s", len(df), LYRICS_SCHEMA, table_name)

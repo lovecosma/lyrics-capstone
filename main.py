@@ -5,9 +5,9 @@ from dynaconf import Dynaconf
 from sqlalchemy import create_engine
 from typesafe_sdk import AsyncTypeSafeClient
 
+from services.batching import run_in_batches
 from services.etl import (
     TOPIC_TABLE,
-    TRACK_ID_COLUMN,
     BillboardExtractor,
     EconomicIndicatorProcessor,
     EmotionLexiconProcessor,
@@ -98,39 +98,6 @@ def run_etl():
     engine.dispose()
 
 
-def plan_track_batches(conn, processor, batch_size):
-    with conn.begin():
-        pending_track_ids = processor.select_pending()[TRACK_ID_COLUMN].tolist()
-    track_id_batches = [
-        pending_track_ids[batch_start : batch_start + batch_size]
-        for batch_start in range(0, len(pending_track_ids), batch_size)
-    ]
-    logger.info(
-        "Planned %d tracks in %d batches of up to %d",
-        len(pending_track_ids),
-        len(track_id_batches),
-        batch_size,
-    )
-    return track_id_batches
-
-
-def process_track_batch(conn, extractor, processor, track_ids):
-    with conn.begin():
-        track_batch_df = extractor.extract_tracks(track_ids)
-    batch_result = processor.compute_batch(track_batch_df)
-    with conn.begin():
-        processor.load_batch(batch_result)
-
-
-def run_in_batches(conn, extractor, processor, batch_size):
-    track_id_batches = plan_track_batches(conn, processor, batch_size)
-    for batch_number, track_ids in enumerate(track_id_batches, start=1):
-        logger.info("Processing batch %d of %d", batch_number, len(track_id_batches))
-        process_track_batch(conn, extractor, processor, track_ids)
-        logger.info("Committed batch %d of %d", batch_number, len(track_id_batches))
-    logger.info("Completed %d batches", len(track_id_batches))
-
-
 def fill_missing_genres():
     engine = build_engine()
 
@@ -211,7 +178,9 @@ def load_lyrics_topic_snapshot():
         extractor = Extractor(conn)
         with conn.begin():
             topic_df = extractor.extract_from_db(TOPIC_TABLE)
-        snapshot_df = extractor.extract_from_csv(LYRICS_TOPIC_SNAPSHOT_PATH)
+        snapshot_df = extractor.extract_snapshot(
+            LYRICS_TOPIC_SNAPSHOT_PATH, SnapshotLyricsTopicAnalyzer.SNAPSHOT_COLUMNS
+        )
         processor = LyricsTopicProcessor(
             extractor,
             Loader(conn),
