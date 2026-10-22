@@ -38,7 +38,7 @@
   - Topic: animated main topic vs. topic mentioned bubble chart, period table and genre-by-topic heatmap
   - Vocabulary: "By genre" and "By topic" tabs, each with a distinctive terms chart and a word change chart, both with pickers
   - Explicit: explicit words per 1,000 words by year, plus "By genre" and "By topic" tabs with breakdown charts and tables
-  - Emotion: emotion share chart and period table
+  - Emotion: chart of each emotion's % change in word share since the first period, period table and genre-by-emotion heatmap
   - Sound: song length and audio feature charts, and a sound table
   - Economy: unemployment vs. Party & Celebration share chart
 - Interesting Parts: 
@@ -51,6 +51,7 @@
     - build_chart_title and the chart font constants give every chart the same title style
     - build_chart_note and the *_SOURCE dicts add the source note under each sheet
   - main_topics picks the 7 topics with the most entries (MAIN_TOPIC_COUNT); app.py also uses it to choose which topics to score for distinctive terms
+  - build_genre_share_heatmap draws both genre heatmaps (topics and emotions): each cell is a genre's share minus the all-genre average, with the color scale set by the five vocabulary genres so the small genres don't wash it out
   - The Economy chart standardizes both lines (z-scores), so unemployment and party share can be compared on one axis
   - Each sheet's write-up quotes specific numbers (e.g. "+13.0 points").
   - The chart and picker IDs are constants, so callbacks.py and the layout refer to the same components
@@ -245,6 +246,7 @@ The repositories query these views instead of the raw tables. They're created by
   - Query the emotion data behind the Emotion sheet
 - Interesting Parts: 
   - get_year_shares gives the % of each year's lyric words that carry each NRC emotion
+  - get_genre_shares gives the same % per broad genre, along with each emotion's share across all genres, so the heatmap can show how far a genre is above or below average. Entries with no broad genre are left out
   - Counts word occurrences (frequency)
   - Strong profanity words are left out of both the emotion counts and the year's total
   - The year's total includes words with no emotion
@@ -252,9 +254,12 @@ The repositories query these views instead of the raw tables. They're created by
 - Key Tech:
   - pandas
   - CTEs
-    - to total each year's words once before joining the lexicon
+    - to total each year's (or genre's) words once before joining the lexicon
+  - Postgres window functions
+    - for the all-genre totals in get_genre_shares
 - Outputs: 
   - get_year_shares: dataframe of year, emotion, word_count, year_word_count and word_share
+  - get_genre_shares: dataframe of broad_genre, emotion, genre_word_count, genre_share and average_share (both shares are percentages)
 
 
 ## Economy Repository

@@ -441,6 +441,57 @@ class EmotionRepository:
             },
         )
 
+    def get_genre_shares(self):
+        sql = f"""
+          with genre_word as (
+            select
+              ce.broad_genre,
+              lw.word,
+              sum(lw.frequency) as frequency
+            from {LYRICS_SCHEMA}.lyrics_word lw
+            join {LYRICS_SCHEMA}.chart_entry ce on ce.track_id = lw.track_id
+            where lw.analysis_version = %(analysis_version)s
+              and not lw.is_explicit
+              and ce.broad_genre is not null
+            group by ce.broad_genre, lw.word
+          ),
+          genre_total as (
+            select
+              broad_genre,
+              sum(frequency) as frequency,
+              sum(sum(frequency)) over () as all_frequency
+            from genre_word
+            group by broad_genre
+          ),
+          genre_emotion as (
+            select
+              gw.broad_genre,
+              em.display_name as emotion,
+              sum(gw.frequency) as frequency
+            from genre_word gw
+            join {LYRICS_SCHEMA}.word_emotion we on we.word = gw.word
+            join {LYRICS_SCHEMA}.emotion em on em.emotion_id = we.emotion_id
+            group by gw.broad_genre, em.display_name
+          )
+          select
+            ge.broad_genre,
+            ge.emotion,
+            gt.frequency::int as genre_word_count,
+            ge.frequency * %(percent)s::float / gt.frequency as genre_share,
+            sum(ge.frequency) over (partition by ge.emotion) * %(percent)s::float
+              / gt.all_frequency as average_share
+          from genre_emotion ge
+          join genre_total gt on gt.broad_genre = ge.broad_genre
+        """
+        return pd.read_sql(
+            sql,
+            self._engine,
+            params={
+                "analysis_version": LYRICS_ANALYSIS_VERSION,
+                "percent": PERCENT,
+            },
+        )
+
 
 class EconomyRepository:
     def __init__(self, engine):

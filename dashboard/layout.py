@@ -53,9 +53,12 @@ OTHER_GENRES_LABEL = "Other genres"
 OTHER_TOPICS_LABEL = "Other topics"
 OTHER_GENRES_COLOR = "#b8bdc7"
 SENTIMENTS = ("Positive", "Negative")
-DEFAULT_EMOTIONS = ("Positive", "Negative", "Joy", "Anger")
+DEFAULT_EMOTIONS = ("Positive", "Fear", "Joy", "Anger")
 HEADLINE_TOPIC = "Party & Celebration"
 UNEMPLOYMENT_INDICATOR = "Unemployment Rate"
+TOPIC_HEATMAP_DECIMALS = 0
+# Emotion shares differ by fractions of a point between genres
+EMOTION_HEATMAP_DECIMALS = 1
 HEATMAP_COLOR_SCALE = [[0, "#e8908a"], [0.5, "#ffffff"], [1, "#7cc48c"]]
 PERIOD_LENGTH_YEARS = 8
 FLAT_CHANGE_POINTS = 3
@@ -129,6 +132,7 @@ def build_layout(
     explicit_df,
     explicit_breakdown_df,
     emotion_df,
+    genre_emotion_share_df,
     sound_df,
     economy_df,
 ):
@@ -146,7 +150,7 @@ def build_layout(
                 word_year_df,
             ),
             build_explicit_sheet(explicit_df, explicit_breakdown_df),
-            build_emotion_sheet(emotion_df),
+            build_emotion_sheet(emotion_df, genre_emotion_share_df),
             build_sound_sheet(sound_df),
             build_economy_sheet(economy_df, topic_df),
         ],
@@ -628,34 +632,55 @@ def build_explicit_chart(explicit_df):
     return figure
 
 
-def build_emotion_sheet(emotion_df):
+def build_emotion_sheet(emotion_df, genre_emotion_share_df):
+    emotion_count_df = emotion_df.rename(columns={"word_count": "entry_count"})
+    year_word_counts = emotion_df.groupby("year")["year_word_count"].first()
+    early_years, _, _ = comparison_periods(emotion_df["year"])
     return html.Section(
         [
             html.H2("Fear Rises, Joy Fades"),
             html.P(
                 "The NRC Emotion Lexicon tags about 6,800 English words with eight emotions and with "
-                "positive or negative sentiment. Each line is the share of that year's lyric words "
-                'tagged with an emotion. Common filler words like "the" and "you" are left out, '
+                "positive or negative sentiment. Each line is the percent change in the share of lyric "
+                f"words tagged with an emotion, compared with {format_period(*early_years)}. "
+                'Common filler words like "the" and "you" are left out, '
                 "and so is strong profanity, which the lexicon tags as anger and disgust."
             ),
-            dcc.Graph(figure=build_emotion_chart(emotion_df)),
+            dcc.Graph(
+                figure=build_emotion_chart(
+                    emotion_df,
+                    period_shares(
+                        emotion_count_df, "emotion", year_word_counts, *early_years
+                    ),
+                    early_years,
+                )
+            ),
             html.P(
                 "Fear saw the largest increase, from 3.4% of lyric words in 2000–2007 to 4.3% in "
                 "2017–2024 (+0.9 points, a 25% rise). Anger had the next largest increase (+0.7 "
-                "points). Positive words had the largest decrease (-1.1 points), and joy fell by "
-                "-0.9 points. Sadness, disgust and negative words barely changed once profanity is "
-                "left out."
+                "points, up 20%). Positive words had the largest decrease (-1.1 points, down 11%), "
+                "and joy fell the most relative to where it started (-0.9 points, down 13%). "
+                "Sadness (+11%), negative words (+8%) and disgust (+7%) rose more modestly once "
+                "profanity is left out."
             ),
             build_share_table(
-                emotion_df.rename(columns={"word_count": "entry_count"}),
+                emotion_count_df,
                 "emotion",
                 "Emotion",
                 "Emotion word share by period",
-                year_totals=emotion_df.groupby("year")["year_word_count"].first(),
+                year_totals=year_word_counts,
                 flat_change_points=EMOTION_FLAT_CHANGE_POINTS,
             ),
+            html.P(
+                "Genres differ in emotion too. Each cell compares a genre's share of lyric words "
+                "tagged with an emotion against the average across all genres."
+            ),
+            dcc.Graph(
+                figure=build_genre_emotion_heatmap(genre_emotion_share_df, emotion_df)
+            ),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}; "
+                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
+                f"and {format_citation(MELO_LYRICS_SOURCE)}; "
                 f"emotions from {format_citation(NRC_EMOTION_SOURCE)}"
             ),
         ],
@@ -663,23 +688,41 @@ def build_emotion_sheet(emotion_df):
     )
 
 
-def build_emotion_chart(emotion_df):
-    emotion_order = list(
+def emotion_order(emotion_df):
+    return list(
         emotion_df.groupby("emotion")["word_share"]
         .mean()
         .sort_values(ascending=False)
         .index
     )
+
+
+def build_emotion_chart(emotion_df, baseline_shares, baseline_years):
+    change_df = emotion_df.assign(
+        share_change=(
+            emotion_df["word_share"] / emotion_df["emotion"].map(baseline_shares) - 1
+        )
+        * PERCENT
+    )
+    baseline_period = format_period(*baseline_years)
     figure = px.line(
-        emotion_df.sort_values("year"),
+        change_df.sort_values("year"),
         x="year",
-        y="word_share",
+        y="share_change",
         color="emotion",
-        category_orders={"emotion": emotion_order},
-        labels={"year": "Year", "word_share": "% of lyric words", "emotion": "Emotion"},
+        custom_data=["word_share"],
+        category_orders={"emotion": emotion_order(emotion_df)},
+        labels={
+            "year": "Year",
+            "share_change": f"% change vs. {baseline_period}",
+            "emotion": "Emotion",
+        },
         height=SHARE_CHART_HEIGHT,
     )
-    figure.update_traces(hovertemplate="%{y:.2f}%")
+    figure.update_traces(
+        hovertemplate="%{customdata[0]:.2f}% of lyric words (%{y:+.0f}%)"
+    )
+    figure.add_hline(y=0, line_color=OTHER_GENRES_COLOR, line_width=1)
     figure.update_traces(
         line_dash="dash", selector=lambda trace: trace.name in SENTIMENTS
     )
@@ -688,8 +731,7 @@ def build_emotion_chart(emotion_df):
     )
     figure.update_layout(
         title=build_chart_title(
-            "Emotion words as a share of lyrics, "
-            f"{format_period(emotion_df['year'].min(), emotion_df['year'].max())}"
+            f"Change in emotion word share since {baseline_period}"
         ),
         hovermode="x unified",
         font_family=CHART_FONT_FAMILY,
@@ -1054,38 +1096,63 @@ def build_word_change_chart(word_year_df, category, value):
 
 
 def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
+    return build_genre_share_heatmap(
+        genre_topic_share_df,
+        "main_topic",
+        list(category_order(topic_df, "main_topic")),
+        "genre_song_count",
+        TOPIC_HEATMAP_DECIMALS,
+        "%{y} (%{customdata[2]:.0f} songs)<br>%{x}: %{customdata[0]:.1f}% of songs"
+        "<br>Average across genres: %{customdata[1]:.1f}%<extra></extra>",
+        "Main topics by genre vs. average",
+    )
+
+
+def build_genre_emotion_heatmap(genre_emotion_share_df, emotion_df):
+    return build_genre_share_heatmap(
+        genre_emotion_share_df,
+        "emotion",
+        emotion_order(emotion_df),
+        "genre_word_count",
+        EMOTION_HEATMAP_DECIMALS,
+        "%{y} (%{customdata[2]:,.0f} lyric words)<br>%{x}: %{customdata[0]:.2f}% of lyric words"
+        "<br>Average across genres: %{customdata[1]:.2f}%<extra></extra>",
+        "Emotions by genre vs. average",
+    )
+
+
+def build_genre_share_heatmap(
+    share_df, category, column_order, genre_size_column, decimals, hovertemplate, title
+):
     genre_order = list(
-        genre_topic_share_df.drop_duplicates("broad_genre").sort_values(
-            "genre_song_count", ascending=False
+        share_df.drop_duplicates("broad_genre").sort_values(
+            genre_size_column, ascending=False
         )["broad_genre"]
     )
-    topic_order = list(category_order(topic_df, "main_topic"))
     genre_shares = (
-        genre_topic_share_df.pivot(
-            index="broad_genre", columns="main_topic", values="genre_share"
-        )
-        .reindex(index=genre_order, columns=topic_order)
+        share_df.pivot(index="broad_genre", columns=category, values="genre_share")
+        .reindex(index=genre_order, columns=column_order)
         .fillna(0)
     )
-    average_shares = genre_topic_share_df.groupby("main_topic")[
-        "average_share"
-    ].first()[topic_order]
-    song_counts = genre_topic_share_df.groupby("broad_genre")[
-        "genre_song_count"
-    ].first()[genre_order]
+    average_shares = share_df.groupby(category)["average_share"].first()[column_order]
+    genre_sizes = share_df.groupby("broad_genre")[genre_size_column].first()[
+        genre_order
+    ]
     differences = genre_shares - average_shares
     largest_difference = differences.loc[list(VOCABULARY_GENRES)].abs().values.max()
     average_grid = np.broadcast_to(average_shares.values, genre_shares.shape)
-    song_count_grid = np.broadcast_to(
-        song_counts.values[:, np.newaxis], genre_shares.shape
+    genre_size_grid = np.broadcast_to(
+        genre_sizes.values[:, np.newaxis], genre_shares.shape
     )
     figure = go.Figure(
         go.Heatmap(
             z=differences.values,
-            x=topic_order,
+            x=column_order,
             y=genre_order,
-            customdata=np.dstack([genre_shares.values, average_grid, song_count_grid]),
-            text=differences.round().astype(int).map(format_point_difference).values,
+            customdata=np.dstack([genre_shares.values, average_grid, genre_size_grid]),
+            text=differences.round(decimals)
+            .map(lambda points: format_point_difference(points, decimals))
+            .values,
             texttemplate="%{text}",
             colorscale=HEATMAP_COLOR_SCALE,
             zmid=0,
@@ -1096,16 +1163,13 @@ def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
                     "text": "Points above or<br>below the average<br>across genres"
                 }
             },
-            hovertemplate=(
-                "%{y} (%{customdata[2]:.0f} songs)<br>%{x}: %{customdata[0]:.1f}% of songs"
-                "<br>Average across genres: %{customdata[1]:.1f}%<extra></extra>"
-            ),
+            hovertemplate=hovertemplate,
         )
     )
     figure.update_yaxes(autorange="reversed")
     figure.update_xaxes(tickangle=-30)
     figure.update_layout(
-        title=build_chart_title("Main topics by genre vs. average"),
+        title=build_chart_title(title),
         height=VOCABULARY_SHEET_CHART_HEIGHT,
         font_family=CHART_FONT_FAMILY,
         plot_bgcolor="white",
@@ -1113,8 +1177,8 @@ def build_genre_topic_heatmap(genre_topic_share_df, topic_df):
     return figure
 
 
-def format_point_difference(points):
-    return f"{points:+d}" if points else "0"
+def format_point_difference(points, decimals):
+    return f"{points:+.{decimals}f}" if points else "0"
 
 
 def build_vocabulary_chart(distinctive_df, category, category_color, other_label):

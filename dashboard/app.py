@@ -40,7 +40,9 @@ if __name__ == "__main__":
     explicit_df = explicit_repository.get_year_rates()
     explicit_breakdown_df = explicit_repository.get_breakdown_counts()
     vocabulary_repository = VocabularyRepository(engine)
-    emotion_df = EmotionRepository(engine).get_year_shares()
+    emotion_repository = EmotionRepository(engine)
+    emotion_df = emotion_repository.get_year_shares()
+    genre_emotion_share_df = emotion_repository.get_genre_shares()
     sound_df = SoundRepository(engine).get_year_averages()
     economy_df = EconomyRepository(engine).get_year_averages()
     genre_distinctive_df = vocabulary_repository.get_genre_distinctive_terms()
@@ -70,6 +72,7 @@ if __name__ == "__main__":
         explicit_df,
         explicit_breakdown_df,
         emotion_df,
+        genre_emotion_share_df,
         sound_df,
         economy_df,
     )
