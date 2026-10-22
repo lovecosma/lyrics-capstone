@@ -58,6 +58,16 @@ from lyrics_ngram_metric lnm
 left join strong_profanity_word spw on spw.word = lnm.ngram
 where lnm.n = 1;
 
+create or replace view track_explicit as
+select
+  track_id,
+  analysis_version,
+  sum(frequency) as word_count,
+  coalesce(sum(frequency) filter (where is_explicit), 0) as explicit_word_count,
+  bool_or(is_explicit) as has_explicit
+from lyrics_word
+group by track_id, analysis_version;
+
 create or replace view track_topic as
 select
   lt.track_id,

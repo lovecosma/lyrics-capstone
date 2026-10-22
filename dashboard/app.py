@@ -9,6 +9,7 @@ from sqlalchemy import create_engine
 from data import (
     EconomyRepository,
     EmotionRepository,
+    ExplicitRepository,
     GenreRepository,
     SoundRepository,
     TopicRepository,
@@ -35,9 +36,10 @@ if __name__ == "__main__":
     topic_repository = TopicRepository(engine)
     topic_df = topic_repository.get_year_counts()
     topic_presence_df = topic_repository.get_presence_year_counts()
+    explicit_repository = ExplicitRepository(engine)
+    explicit_df = explicit_repository.get_year_rates()
+    explicit_breakdown_df = explicit_repository.get_breakdown_counts()
     vocabulary_repository = VocabularyRepository(engine)
-    explicit_df = vocabulary_repository.get_explicit_year_rates()
-    explicit_breakdown_df = vocabulary_repository.get_explicit_breakdown_counts()
     emotion_df = EmotionRepository(engine).get_year_shares()
     sound_df = SoundRepository(engine).get_year_averages()
     economy_df = EconomyRepository(engine).get_year_averages()

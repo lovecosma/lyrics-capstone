@@ -51,7 +51,7 @@ class GenreRepository:
               sum(entry_count) as entry_count
             from {LYRICS_SCHEMA}.genre_theme_year_count
             where topic_analysis_version = %(analysis_version)s
-            and broad_genre is not null
+              and broad_genre is not null
             group by broad_genre, main_theme
           ),
           with_totals as (
@@ -83,11 +83,14 @@ class TopicRepository:
 
     def get_year_counts(self):
         sql = f"""
-    select year, main_theme as main_topic, sum(entry_count)::int as entry_count
-    from {LYRICS_SCHEMA}.genre_theme_year_count
-    where topic_analysis_version = %(analysis_version)s
-    group by year, main_theme
-    """
+          select 
+            year, 
+            main_theme as main_topic, 
+            sum(entry_count)::int as entry_count
+          from {LYRICS_SCHEMA}.genre_theme_year_count
+          where topic_analysis_version = %(analysis_version)s
+          group by year, main_theme
+        """
         return pd.read_sql(
             sql,
             self._engine,
@@ -96,13 +99,16 @@ class TopicRepository:
 
     def get_presence_year_counts(self):
         sql = f"""
-    select ce.year, tt.topic, count(*) as entry_count
-    from {LYRICS_SCHEMA}.chart_entry ce
-    join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
-    where tt.analysis_version = %(analysis_version)s
-      and (tt.is_primary or tt.presence_probability >= %(presence_threshold)s)
-    group by ce.year, tt.topic
-    """
+          select 
+            ce.year, 
+            tt.topic, 
+            count(*) as entry_count
+          from {LYRICS_SCHEMA}.chart_entry ce
+          join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
+          where tt.analysis_version = %(analysis_version)s
+            and (tt.is_primary or tt.presence_probability >= %(presence_threshold)s)
+          group by ce.year, tt.topic
+        """
         return pd.read_sql(
             sql,
             self._engine,
@@ -114,174 +120,92 @@ class TopicRepository:
 
 
 class VocabularyRepository:
-    GENRE_SIZE_CTE = f"""genre_size as (
-      select
-        broad_genre,
-        count(*) as track_count,
-        sum(count(*)) over () as all_track_count
-      from {LYRICS_SCHEMA}.genre_track
-      group by broad_genre
+    GENRE_SIZE_CTE = f"""
+      genre_size as (
+        select
+          broad_genre,
+          count(*) as track_count,
+          sum(count(*)) over () as all_track_count
+        from {LYRICS_SCHEMA}.genre_track
+        group by broad_genre
     )"""
-
-    def __init__(self, engine):
-        self._engine = engine
-
-    def get_genre_distinctive_terms(self):
-        return self._get_distinctive_terms(
-            f"select track_id, broad_genre as category from {LYRICS_SCHEMA}.genre_track",
-            VOCABULARY_GENRES,
-        )
-
-    def get_topic_distinctive_terms(self, topics):
-        return self._get_distinctive_terms(
-            f"""select track_id, topic as category
+    GENRE_TRACK_SQL = f"""
+      select 
+        track_id, 
+        broad_genre as category
+      from {LYRICS_SCHEMA}.genre_track
+    """
+    TOPIC_TRACK_SQL = f"""
+      select 
+        track_id, 
+        topic as category
       from {LYRICS_SCHEMA}.track_topic
-      where is_primary and analysis_version = %(topic_analysis_version)s""",
-            topics,
-        )
-
-    def _get_distinctive_terms(self, category_track_sql, categories):
-        sql = f"""
-    with category_track as (
-      {category_track_sql}
-    ),
-    category_size as (
-      select
-        category,
-        count(*) as track_count,
-        sum(count(*)) over () as all_track_count
-      from category_track
-      group by category
-    ),
-    term_track as (
-      select ct.category, m.ngram as term, count(*) as track_count
-      from {LYRICS_SCHEMA}.lyrics_ngram_metric m
-      join category_track ct on ct.track_id = m.track_id
-      where m.analysis_version = %(analysis_version)s
-        and m.n <= %(max_ngram_length)s
-        -- Checks each word of a phrase; MAX_NGRAM_LENGTH is 2, so two parts cover every phrase
-        and split_part(m.ngram, ' ', 1) not in (select word from {LYRICS_SCHEMA}.strong_profanity_word)
-        and split_part(m.ngram, ' ', 2) not in (select word from {LYRICS_SCHEMA}.strong_profanity_word)
-      group by ct.category, m.ngram
-      union all
-      select ct.category, %(profanity_term)s, count(distinct lw.track_id)
-      from {LYRICS_SCHEMA}.lyrics_word lw
-      join category_track ct on ct.track_id = lw.track_id
-      where lw.analysis_version = %(analysis_version)s
-        and lw.is_explicit
-      group by ct.category
-    ),
-    scored as (
-      select
-        tt.category,
-        tt.term,
-        tt.term = %(profanity_term)s as is_profanity,
-        tt.track_count * %(percent)s::float / cs.track_count as category_share,
-        (sum(tt.track_count) over (partition by tt.term) - tt.track_count) * %(percent)s::float
-          / (cs.all_track_count - cs.track_count) as other_share
-      from term_track tt
-      join category_size cs on cs.category = tt.category
-    ),
-    ranked as (
-      select
-        *,
-        category_share / (other_share + %(smoothing)s) as lift,
-        row_number() over (
-          partition by category, is_profanity
-          order by category_share / (other_share + %(smoothing)s) desc
-        ) as term_rank
-      from scored
-      where category = any(%(categories)s::text[])
-        and category_share >= %(min_share)s
-    )
-    select category, term as ngram, category_share, other_share
-    from ranked
-    where (not is_profanity and term_rank <= %(term_count)s)
-       or (is_profanity and category_share > other_share)
-    order by category, lift desc
+      where is_primary and analysis_version = %(topic_analysis_version)s
     """
-        return pd.read_sql(
-            sql,
-            self._engine,
-            params={
-                "analysis_version": LYRICS_ANALYSIS_VERSION,
-                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
-                "max_ngram_length": MAX_NGRAM_LENGTH,
-                "profanity_term": PROFANITY_TERM,
-                "percent": PERCENT,
-                "smoothing": DISTINCTIVE_SMOOTHING_POINTS,
-                "categories": list(categories),
-                "min_share": MIN_DISTINCTIVE_SHARE,
-                "term_count": DISTINCTIVE_TERM_COUNT,
-            },
-        )
 
-    def get_explicit_year_rates(self):
-        sql = f"""
-    with song as (
-      select
-        ce.year,
-        ce.track_id,
-        sum(lw.frequency) as word_count,
-        coalesce(
-          sum(lw.frequency) filter (where lw.is_explicit), 0
-        ) as explicit_word_count
-      from {LYRICS_SCHEMA}.lyrics_word lw
-      join {LYRICS_SCHEMA}.chart_entry ce on ce.track_id = lw.track_id
-      where lw.analysis_version = %(analysis_version)s
-      group by ce.year, ce.track_id
-    )
-    select
-      year,
-      sum(explicit_word_count) * %(words_per_rate)s::float / sum(word_count) as explicit_rate,
-      count(*) filter (where explicit_word_count > 0) * %(percent)s::float / count(*)
-        as explicit_song_share
-    from song
-    group by year
-    order by year
+    DISTINCTIVE_TERMS_SQL = f"""
+      with category_track as (
+        {{category_track_sql}}
+      ),
+      category_size as (
+        select
+          category,
+          count(*) as track_count,
+          sum(count(*)) over () as all_track_count
+        from category_track
+        group by category
+      ),
+      term_track as (
+        select 
+          ct.category, 
+          m.ngram as term, 
+          count(*) as track_count
+        from {LYRICS_SCHEMA}.lyrics_ngram_metric m
+        join category_track ct on ct.track_id = m.track_id
+        where m.analysis_version = %(analysis_version)s
+          and m.n <= %(max_ngram_length)s
+          -- Checks each word of a phrase; MAX_NGRAM_LENGTH is 2, so two parts cover every phrase
+          and split_part(m.ngram, ' ', 1) not in (select word from {LYRICS_SCHEMA}.strong_profanity_word)
+          and split_part(m.ngram, ' ', 2) not in (select word from {LYRICS_SCHEMA}.strong_profanity_word)
+        group by ct.category, m.ngram
+        union all
+        select ct.category, %(profanity_term)s, count(distinct lw.track_id)
+        from {LYRICS_SCHEMA}.lyrics_word lw
+        join category_track ct on ct.track_id = lw.track_id
+        where lw.analysis_version = %(analysis_version)s
+          and lw.is_explicit
+        group by ct.category
+      ),
+      scored as (
+        select
+          tt.category,
+          tt.term,
+          tt.term = %(profanity_term)s as is_profanity,
+          tt.track_count * %(percent)s::float / cs.track_count as category_share,
+          (sum(tt.track_count) over (partition by tt.term) - tt.track_count) * %(percent)s::float
+            / (cs.all_track_count - cs.track_count) as other_share
+        from term_track tt
+        join category_size cs on cs.category = tt.category
+      ),
+      ranked as (
+        select
+          *,
+          category_share / (other_share + %(smoothing)s) as lift,
+          row_number() over (
+            partition by category, is_profanity
+            order by category_share / (other_share + %(smoothing)s) desc
+          ) as term_rank
+        from scored
+        where category = any(%(categories)s::text[])
+          and category_share >= %(min_share)s
+      )
+      select category, term as ngram, category_share, other_share
+      from ranked
+      where (not is_profanity and term_rank <= %(term_count)s)
+        or (is_profanity and category_share > other_share)
+      order by category, lift desc
     """
-        return pd.read_sql(
-            sql,
-            self._engine,
-            params={
-                "analysis_version": LYRICS_ANALYSIS_VERSION,
-                "words_per_rate": WORDS_PER_RATE,
-                "percent": PERCENT,
-            },
-        )
-
-    def get_explicit_breakdown_counts(self):
-        sql = f"""
-    with song as (
-      select ce.year, ce.track_id, ce.broad_genre, bool_or(lw.is_explicit) as has_explicit
-      from {LYRICS_SCHEMA}.chart_entry ce
-      join {LYRICS_SCHEMA}.lyrics_word lw on lw.track_id = ce.track_id
-      where lw.analysis_version = %(lyrics_analysis_version)s
-      group by ce.year, ce.track_id, ce.broad_genre
-    )
-    select
-      s.year,
-      s.broad_genre,
-      tt.topic as main_topic,
-      count(*) filter (where s.has_explicit) as explicit_entry_count,
-      count(*) as entry_count
-    from song s
-    join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = s.track_id
-    where tt.is_primary
-      and tt.analysis_version = %(topic_analysis_version)s
-    group by s.year, s.broad_genre, tt.topic
-    """
-        return pd.read_sql(
-            sql,
-            self._engine,
-            params={
-                "lyrics_analysis_version": LYRICS_ANALYSIS_VERSION,
-                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
-            },
-        )
-
-    def get_word_year_counts(self):
-        sql = f"""
+    WORD_YEAR_COUNTS_SQL = f"""
     with topic_entry as (
       select ce.*, tt.topic as main_topic
       from {LYRICS_SCHEMA}.chart_entry ce
@@ -331,22 +255,12 @@ class VocabularyRepository:
       and ys.broad_genre is not distinct from yw.broad_genre
       and ys.main_topic is not distinct from yw.main_topic
     """
-        return pd.read_sql(
-            sql,
-            self._engine,
-            params={
-                "analysis_version": LYRICS_ANALYSIS_VERSION,
-                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
-                "profanity_term": PROFANITY_TERM,
-                "min_entry_count": MIN_WORD_ENTRY_COUNT,
-            },
-        )
-
-    def get_shared_top_words(self):
-        sql = f"""
-    with {self.GENRE_SIZE_CTE},
+    SHARED_TOP_WORDS_SQL = f"""
+    with {GENRE_SIZE_CTE},
     word_share as (
-      select gt.broad_genre, lw.word, count(*)::float / gs.track_count as genre_share
+      select 
+        gt.broad_genre, 
+        lw.word, count(*)::float / gs.track_count as genre_share
       from {LYRICS_SCHEMA}.lyrics_word lw
       join {LYRICS_SCHEMA}.genre_track gt on gt.track_id = lw.track_id
       join genre_size gs on gs.broad_genre = gt.broad_genre
@@ -361,15 +275,63 @@ class VocabularyRepository:
         row_number() over (partition by broad_genre order by genre_share desc) as word_rank
       from word_share
     )
-    select word
+    select 
+      word
     from ranked
     where word_rank <= %(word_rank)s
     group by word
     having count(*) = cardinality(%(genres)s::text[])
     order by avg(genre_share) desc
     """
+
+    def __init__(self, engine):
+        self._engine = engine
+
+    def get_genre_distinctive_terms(self):
+        return self._get_distinctive_terms(
+            self.GENRE_TRACK_SQL,
+            VOCABULARY_GENRES,
+        )
+
+    def get_topic_distinctive_terms(self, topics):
+        return self._get_distinctive_terms(
+            self.TOPIC_TRACK_SQL,
+            topics,
+        )
+
+    def _get_distinctive_terms(self, category_track_sql, categories):
+        sql = self.DISTINCTIVE_TERMS_SQL.format(category_track_sql=category_track_sql)
         return pd.read_sql(
             sql,
+            self._engine,
+            params={
+                "analysis_version": LYRICS_ANALYSIS_VERSION,
+                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
+                "max_ngram_length": MAX_NGRAM_LENGTH,
+                "profanity_term": PROFANITY_TERM,
+                "percent": PERCENT,
+                "smoothing": DISTINCTIVE_SMOOTHING_POINTS,
+                "categories": list(categories),
+                "min_share": MIN_DISTINCTIVE_SHARE,
+                "term_count": DISTINCTIVE_TERM_COUNT,
+            },
+        )
+
+    def get_word_year_counts(self):
+        return pd.read_sql(
+            self.WORD_YEAR_COUNTS_SQL,
+            self._engine,
+            params={
+                "analysis_version": LYRICS_ANALYSIS_VERSION,
+                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
+                "profanity_term": PROFANITY_TERM,
+                "min_entry_count": MIN_WORD_ENTRY_COUNT,
+            },
+        )
+
+    def get_shared_top_words(self):
+        return pd.read_sql(
+            self.SHARED_TOP_WORDS_SQL,
             self._engine,
             params={
                 "analysis_version": LYRICS_ANALYSIS_VERSION,
@@ -377,6 +339,61 @@ class VocabularyRepository:
                 "word_rank": SHARED_WORD_RANK,
             },
         )["word"].tolist()
+
+
+class ExplicitRepository:
+    YEAR_RATES_SQL = f"""
+    select
+      ce.year,
+      sum(te.explicit_word_count) * %(words_per_rate)s::float / sum(te.word_count)
+        as explicit_rate,
+      count(*) filter (where te.has_explicit) * %(percent)s::float / count(*)
+        as explicit_song_share
+    from {LYRICS_SCHEMA}.chart_entry ce
+    join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
+    where te.analysis_version = %(analysis_version)s
+    group by ce.year
+    order by ce.year
+    """
+    BREAKDOWN_COUNTS_SQL = f"""
+    select
+      ce.year,
+      ce.broad_genre,
+      tt.topic as main_topic,
+      count(*) filter (where te.has_explicit) as explicit_entry_count,
+      count(*) as entry_count
+    from {LYRICS_SCHEMA}.chart_entry ce
+    join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
+    join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
+    where te.analysis_version = %(lyrics_analysis_version)s
+      and tt.is_primary
+      and tt.analysis_version = %(topic_analysis_version)s
+    group by ce.year, ce.broad_genre, tt.topic
+    """
+
+    def __init__(self, engine):
+        self._engine = engine
+
+    def get_year_rates(self):
+        return pd.read_sql(
+            self.YEAR_RATES_SQL,
+            self._engine,
+            params={
+                "analysis_version": LYRICS_ANALYSIS_VERSION,
+                "words_per_rate": WORDS_PER_RATE,
+                "percent": PERCENT,
+            },
+        )
+
+    def get_breakdown_counts(self):
+        return pd.read_sql(
+            self.BREAKDOWN_COUNTS_SQL,
+            self._engine,
+            params={
+                "lyrics_analysis_version": LYRICS_ANALYSIS_VERSION,
+                "topic_analysis_version": TOPIC_ANALYSIS_VERSION,
+            },
+        )
 
 
 class EmotionRepository:
