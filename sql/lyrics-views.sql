@@ -36,22 +36,16 @@ from chart_entry
 where broad_genre is not null;
 
 create or replace view strong_profanity_word as
+-- Core words count as strong in any form, even where the list rates them Mild
 with core_profanity(word) as (
   values ('fuck'), ('shit'), ('bitch'), ('pussy'), ('dick'), ('ass')
-),
-missing_spelling(word) as (
-  values ('ho'), ('hos'), ('thot'), ('thots')
 )
 select pw.word
 from profanity_word pw
 where pw.severity_description in ('Strong', 'Severe')
    or pw.canonical_form_1 in (select word from core_profanity)
    or pw.canonical_form_2 in (select word from core_profanity)
-   or pw.canonical_form_3 in (select word from core_profanity)
-union
-select word from core_profanity
-union
-select word from missing_spelling;
+   or pw.canonical_form_3 in (select word from core_profanity);
 
 create or replace view lyrics_word as
 select

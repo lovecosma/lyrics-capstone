@@ -32,38 +32,44 @@ class GenreRepository:
 
     def get_year_counts(self):
         sql = f"""
-    select year, broad_genre, count(*)::int as entry_count
-    from {LYRICS_SCHEMA}.chart_entry
-    where broad_genre is not null
-    group by year, broad_genre
-    """
+          select 
+            year, 
+            broad_genre, 
+            count(*) as entry_count
+          from {LYRICS_SCHEMA}.chart_entry
+          where broad_genre is not null
+          group by year, broad_genre
+        """
         return pd.read_sql(sql, self._engine)
 
     def get_topic_shares(self):
         sql = f"""
-    with genre_topic as (
-      select broad_genre, main_theme as main_topic, sum(entry_count) as entry_count
-      from {LYRICS_SCHEMA}.genre_theme_year_count
-      where topic_analysis_version = %(analysis_version)s
-        and broad_genre is not null
-      group by broad_genre, main_theme
-    ),
-    with_totals as (
-      select
-        *,
-        sum(entry_count) over (partition by broad_genre) as genre_song_count,
-        sum(entry_count) over (partition by main_topic) as topic_song_count,
-        sum(entry_count) over () as song_count
-      from genre_topic
-    )
-    select
-      broad_genre,
-      main_topic,
-      genre_song_count::int as genre_song_count,
-      entry_count * %(percent)s::float / genre_song_count as genre_share,
-      topic_song_count * %(percent)s::float / song_count as average_share
-    from with_totals
-    """
+          with genre_topic as (
+            select 
+              broad_genre, 
+              main_theme as main_topic, 
+              sum(entry_count) as entry_count
+            from {LYRICS_SCHEMA}.genre_theme_year_count
+            where topic_analysis_version = %(analysis_version)s
+            and broad_genre is not null
+            group by broad_genre, main_theme
+          ),
+          with_totals as (
+            select
+              *,
+              sum(entry_count) over (partition by broad_genre) as genre_song_count,
+              sum(entry_count) over (partition by main_topic) as topic_song_count,
+              sum(entry_count) over () as song_count
+            from genre_topic
+          )
+          select
+            broad_genre,
+            main_topic,
+            genre_song_count::int as genre_song_count,
+            entry_count * %(percent)s::float / genre_song_count as genre_share,
+            topic_song_count * %(percent)s::float / song_count as average_share
+          from with_totals
+        """
         return pd.read_sql(
             sql,
             self._engine,
@@ -90,7 +96,7 @@ class TopicRepository:
 
     def get_presence_year_counts(self):
         sql = f"""
-    select ce.year, tt.topic, count(*)::int as entry_count
+    select ce.year, tt.topic, count(*) as entry_count
     from {LYRICS_SCHEMA}.chart_entry ce
     join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
     where tt.analysis_version = %(analysis_version)s
@@ -257,8 +263,8 @@ class VocabularyRepository:
       s.year,
       s.broad_genre,
       tt.topic as main_topic,
-      (count(*) filter (where s.has_explicit))::int as explicit_entry_count,
-      count(*)::int as entry_count
+      count(*) filter (where s.has_explicit) as explicit_entry_count,
+      count(*) as entry_count
     from song s
     join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = s.track_id
     where tt.is_primary
@@ -316,8 +322,8 @@ class VocabularyRepository:
       yw.broad_genre,
       yw.main_topic,
       yw.word,
-      yw.entry_count::int as entry_count,
-      ys.entry_count::int as year_entry_count
+      yw.entry_count,
+      ys.entry_count as year_entry_count
     from year_word yw
     join common_word cw on cw.word = yw.word
     join year_size ys
