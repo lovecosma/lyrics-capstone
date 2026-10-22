@@ -1,5 +1,67 @@
 # Dashboard Documentation
 
+## App (app.py)
+- Inputs: DB_ENGINE_URL from .env 
+- Purpose: 
+  - Start the Dash app: load every sheet's data from the repositories, build the layout and serve it
+- Interesting Parts: 
+  - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
+  - Genre and topic colors are worked out once from the genre and topic counts and passed to both the layout and the callbacks, so a genre or topic is the same color on every sheet
+  - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart without querying the database
+  - Changes into the dashboard folder on startup, so Dynaconf finds .env
+- Key Tech:
+  - Dash
+  - SQLAlchemy
+  - Dynaconf
+
+## Callbacks (callbacks.py)
+- Inputs: genre and topic distinctive terms, genre and topic colors, and word year counts, passed in by app.py through set_data
+- Purpose: 
+  - Redraw the Vocabulary sheet's four picker charts when a picker changes
+- Interesting Parts: 
+  - update_genre_vocabulary_chart / update_topic_vocabulary_chart show the picked genre's or topic's distinctive terms against every other genre or topic, in the picked one's color
+  - update_genre_word_change_chart / update_topic_word_change_chart show which words gained or lost the most between the early and late chart years for the picked genre or topic. The "All genres" and "All songs" options use every entry
+  - The callbacks register with Dash when app.py imports the module, before any data is loaded, so set_data stores the data in module globals for them to read later
+  - prevent_initial_call skips the first run, since the layout already draws each chart's starting figure
+- Key Tech:
+  - Dash callbacks
+  - pandas
+- Outputs: 
+  - A new Plotly figure for the chart tied to the picker
+
+## Layout (layout.py)
+- Inputs: the dataframes app.py loads from the repositories
+- Purpose: 
+  - Build the whole page
+- Sheets: 
+  - Genre: genre share line chart and period table
+  - Topic: animated main topic vs. topic mentioned bubble chart, period table and genre-by-topic heatmap
+  - Vocabulary: "By genre" and "By topic" tabs, each with a distinctive terms chart and a word change chart, both with pickers
+  - Explicit: explicit words per 1,000 words by year, plus "By genre" and "By topic" tabs with breakdown charts and tables
+  - Emotion: emotion share chart and period table
+  - Sound: song length and audio feature charts, and a sound table
+  - Economy: unemployment vs. Party & Celebration share chart
+- Interesting Parts: 
+  - Shared helpers keep the sheets consistent:
+    - yearly_shares turns year counts into each year's % of entries, for the genre share chart, the topic bubble chart and the Economy sheet's party share
+    - build_share_table shows each genre, topic or emotion's share in each period and the change from first to last, for the Genre, Topic and Emotion sheets
+    - comparison_periods splits the years into early, middle and late periods (the first and last 8 years and the years between) for the period tables and word change charts
+    - category_order sorts genres or topics by total entries, and category_colors gives each one a fixed color in that order, so colors match across sheets
+    - change_class marks a change in the tables as up or down when it's past a "flat" threshold, and muted otherwise (colors are in style.css)
+    - build_chart_title and the chart font constants give every chart the same title style
+    - build_chart_note and the *_SOURCE dicts add the source note under each sheet
+  - main_topics picks the 7 topics with the most entries (MAIN_TOPIC_COUNT); app.py also uses it to choose which topics to score for distinctive terms
+  - The Economy chart standardizes both lines (z-scores), so unemployment and party share can be compared on one axis
+  - Each sheet's write-up quotes specific numbers (e.g. "+13.0 points").
+  - The chart and picker IDs are constants, so callbacks.py and the layout refer to the same components
+  - Styles come from assets/style.css, which Dash loads automatically
+- Key Tech:
+  - Dash html and dcc components
+  - Plotly Express and Graph Objects
+  - pandas
+- Outputs: 
+  - build_layout: the Dash component tree that app.py sets as app.layout
+
 ## Views 
 The repositories query these views instead of the raw tables. They're created by the DAG's billboard_views task, right after the schema.
 
