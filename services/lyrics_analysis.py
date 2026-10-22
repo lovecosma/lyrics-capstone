@@ -1,13 +1,22 @@
 import asyncio
 import logging
 import re
+from collections.abc import Callable, Iterable, Iterator
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 from lexicalrichness import LexicalRichness
 from nltk import FreqDist
 from nltk.tokenize import RegexpTokenizer
 from nltk.util import everygrams
-from typesafe_sdk import Choice, Noul, TypeSafeError
+from typesafe_sdk import (
+    AsyncTypeSafeClient,
+    Choice,
+    Noul,
+    SystemOneResponse,
+    TypeSafeError,
+)
 
 from services.etl import (
     LYRICS_METRIC_TABLE,
@@ -15,6 +24,8 @@ from services.etl import (
     LYRICS_TOPIC_TABLE,
     TOPIC_TABLE,
     TRACK_TABLE,
+    Extractor,
+    Loader,
 )
 
 logger = logging.getLogger(__name__)
@@ -60,7 +71,7 @@ class LyricsCleaner:
     )
     SECTION_HEADER_REPLACEMENT = ""
 
-    def clean(self, lyrics):
+    def clean(self, lyrics: str) -> str:
         without_artifacts = self.SCRAPE_ARTIFACT_PATTERN.sub(
             self.SCRAPE_ARTIFACT_REPLACEMENT, lyrics
         )
@@ -77,7 +88,7 @@ class LyricsTokenizer:
     # -> don't, stop, rock'n'roll, 2am, lovin, café
     WORD_TOKENIZER = RegexpTokenizer(r"[^\W_]+(?:'[^\W_]+)*")
 
-    def tokenize(self, lyrics):
+    def tokenize(self, lyrics: str) -> list[list[str]]:
         normalized = lyrics.translate(self.CHARACTER_NORMALIZATION).casefold()
         lines = (self.WORD_TOKENIZER.tokenize(line) for line in normalized.splitlines())
         return [line for line in lines if line]
@@ -114,19 +125,21 @@ class LyricsAnalyzer:
         ANALYSIS_VERSION_COLUMN,
     )
 
-    def __init__(self, non_content_words):
+    def __init__(self, non_content_words: Iterable[str]) -> None:
         self._cleaner = LyricsCleaner()
         self._tokenizer = LyricsTokenizer()
         self._non_content_words = frozenset(non_content_words)
 
-    def select_unanalyzed(self, track_df, lyrics_metric_df):
+    def select_unanalyzed(
+        self, track_df: pd.DataFrame, lyrics_metric_df: pd.DataFrame
+    ) -> pd.DataFrame:
         is_current_version = lyrics_metric_df[self.ANALYSIS_VERSION_COLUMN].eq(
             self.ANALYSIS_VERSION
         )
         analyzed_track_ids = lyrics_metric_df[self.TRACK_ID_COLUMN][is_current_version]
         return track_df[~track_df[self.TRACK_ID_COLUMN].isin(analyzed_track_ids)]
 
-    def analyze(self, track_df):
+    def analyze(self, track_df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
         logger.info("Analyzing lyrics for %d tracks", len(track_df))
         lyrics_metrics, lyrics_ngram_metrics = self._compute_track_metrics(track_df)
         lyrics_metric_df = pd.DataFrame(
@@ -143,7 +156,9 @@ class LyricsAnalyzer:
         )
         return lyrics_metric_df, lyrics_ngram_metric_df
 
-    def _compute_track_metrics(self, track_df):
+    def _compute_track_metrics(
+        self, track_df: pd.DataFrame
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         lyrics_metrics = []
         lyrics_ngram_metrics = []
         for track_id, lyrics in zip(
@@ -156,17 +171,19 @@ class LyricsAnalyzer:
             )
         return lyrics_metrics, lyrics_ngram_metrics
 
-    def _tokenize_lyrics(self, lyrics):
+    def _tokenize_lyrics(self, lyrics: str) -> list[list[str]]:
         return self._tokenizer.tokenize(self._cleaner.clean(lyrics))
 
-    def _warn_about_wordless_tracks(self, lyrics_metric_df):
+    def _warn_about_wordless_tracks(self, lyrics_metric_df: pd.DataFrame) -> None:
         wordless_track_count = lyrics_metric_df[self.WORD_COUNT_COLUMN].eq(0).sum()
         if wordless_track_count:
             logger.warning(
                 "%d tracks have no words after cleaning lyrics", wordless_track_count
             )
 
-    def _compute_lyrics_metric(self, track_id, lines):
+    def _compute_lyrics_metric(
+        self, track_id: int, lines: list[list[str]]
+    ) -> dict[str, Any]:
         words = [word for line in lines for word in line]
         return {
             self.TRACK_ID_COLUMN: track_id,
@@ -177,17 +194,19 @@ class LyricsAnalyzer:
             self.ANALYSIS_VERSION_COLUMN: self.ANALYSIS_VERSION,
         }
 
-    def _compute_lexical_diversity(self, words):
+    def _compute_lexical_diversity(self, words: list[str]) -> float | None:
         if not words:
             return None
         return LexicalRichness(words, preprocessor=None, tokenizer=None).mtld()
 
-    def _compute_average_word_length(self, words):
+    def _compute_average_word_length(self, words: list[str]) -> float | None:
         if not words:
             return None
         return sum(map(len, words)) / len(words)
 
-    def _compute_lyrics_ngram_metrics(self, track_id, lines):
+    def _compute_lyrics_ngram_metrics(
+        self, track_id: int, lines: list[list[str]]
+    ) -> Iterator[dict[str, Any]]:
         ngram_frequencies = FreqDist(
             gram
             for line in lines
@@ -205,7 +224,7 @@ class LyricsAnalyzer:
             if self._is_content_gram(gram)
         )
 
-    def _is_content_gram(self, gram):
+    def _is_content_gram(self, gram: tuple[str, ...]) -> bool:
         return not all(word in self._non_content_words for word in gram)
 
 
@@ -229,12 +248,14 @@ class TopicAnalyzer:
         ANALYSIS_VERSION_COLUMN,
     )
 
-    def __init__(self, topic_df):
+    def __init__(self, topic_df: pd.DataFrame) -> None:
         self._topic_ids = dict(
             zip(topic_df[self.TOPIC_NAME_COLUMN], topic_df[self.TOPIC_ID_COLUMN])
         )
 
-    def select_uncategorized(self, track_df, lyrics_topic_df):
+    def select_uncategorized(
+        self, track_df: pd.DataFrame, lyrics_topic_df: pd.DataFrame
+    ) -> pd.DataFrame:
         is_current_version = lyrics_topic_df[self.ANALYSIS_VERSION_COLUMN].eq(
             self.ANALYSIS_VERSION
         )
@@ -257,7 +278,11 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
     )
     TOPIC_DESCRIPTION_COLUMN = "description"
 
-    def __init__(self, topic_df, create_client):
+    def __init__(
+        self,
+        topic_df: pd.DataFrame,
+        create_client: Callable[[], AsyncTypeSafeClient],
+    ) -> None:
         super().__init__(topic_df)
         self._create_client = create_client
         self._cleaner = LyricsCleaner()
@@ -270,7 +295,7 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
             )
         )
 
-    def analyze(self, track_df):
+    def analyze(self, track_df: pd.DataFrame) -> pd.DataFrame:
         logger.info("Categorizing lyrics for %d tracks", len(track_df))
         track_topic_rows = asyncio.run(self._classify_tracks(track_df))
         lyrics_topic_df = pd.DataFrame(
@@ -283,7 +308,9 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
         )
         return lyrics_topic_df
 
-    def _build_questions(self, topic_descriptions):
+    def _build_questions(
+        self, topic_descriptions: dict[str, str]
+    ) -> dict[str, Choice | Noul]:
         primary_topic_question = Choice(
             instructions=self.PRIMARY_TOPIC_INSTRUCTIONS, criteria=topic_descriptions
         )
@@ -297,7 +324,7 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
             **topic_presence_questions,
         }
 
-    def _build_presence_question(self, topic_description):
+    def _build_presence_question(self, topic_description: str) -> Noul:
         return Noul(
             instructions={
                 "question": self.TOPIC_PRESENCE_QUESTION,
@@ -305,7 +332,9 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
             }
         )
 
-    async def _classify_tracks(self, track_df):
+    async def _classify_tracks(
+        self, track_df: pd.DataFrame
+    ) -> list[list[dict[str, Any]]]:
         semaphore = asyncio.Semaphore(self.MAX_CONCURRENT_REQUESTS)
         async with self._create_client() as client:
             return await asyncio.gather(
@@ -315,7 +344,9 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
                 )
             )
 
-    async def _classify_track(self, client, semaphore, track):
+    async def _classify_track(
+        self, client: AsyncTypeSafeClient, semaphore: asyncio.Semaphore, track: Any
+    ) -> list[dict[str, Any]]:
         async with semaphore:
             try:
                 response = await client.system_one(
@@ -332,7 +363,7 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
                 )
                 return []
 
-    def _build_song_state(self, track):
+    def _build_song_state(self, track: Any) -> dict[str, dict[str, str]]:
         return {
             "song": {
                 "title": track.title,
@@ -341,7 +372,9 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
             }
         }
 
-    def _build_lyrics_topic_rows(self, track, response):
+    def _build_lyrics_topic_rows(
+        self, track: Any, response: SystemOneResponse
+    ) -> list[dict[str, Any]]:
         primary_topic = response.choices[self.PRIMARY_TOPIC_QUESTION_ID]
         return [
             {
@@ -358,7 +391,9 @@ class LyricsTopicAnalyzer(TopicAnalyzer):
             for topic, topic_id in self._topic_ids.items()
         ]
 
-    def _get_presence_probability(self, response, topic):
+    def _get_presence_probability(
+        self, response: SystemOneResponse, topic: str
+    ) -> float | None:
         if topic == self.OTHER_TOPIC:
             return None
         return response.nouls[topic].noul
@@ -382,11 +417,11 @@ class SnapshotLyricsTopicAnalyzer(TopicAnalyzer):
         TopicAnalyzer.ANALYSIS_VERSION_COLUMN,
     )
 
-    def __init__(self, topic_df, snapshot_df):
+    def __init__(self, topic_df: pd.DataFrame, snapshot_df: pd.DataFrame) -> None:
         super().__init__(topic_df)
         self._snapshot_df = snapshot_df
 
-    def analyze(self, track_df):
+    def analyze(self, track_df: pd.DataFrame) -> pd.DataFrame:
         is_current_version = self._snapshot_df[self.ANALYSIS_VERSION_COLUMN].eq(
             self.ANALYSIS_VERSION
         )
@@ -416,12 +451,14 @@ class SnapshotLyricsTopicAnalyzer(TopicAnalyzer):
 
 
 class LyricsAnalysisProcessor:
-    def __init__(self, extractor, loader, analyzer):
+    def __init__(
+        self, extractor: Extractor, loader: Loader, analyzer: LyricsAnalyzer
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._analyzer = analyzer
 
-    def select_pending(self):
+    def select_pending(self) -> pd.DataFrame:
         track_df = self._extractor.extract_from_db(TRACK_TABLE)
         unanalyzed_track_df = self._analyzer.select_unanalyzed(
             track_df, self._extractor.extract_from_db(LYRICS_METRIC_TABLE)
@@ -433,22 +470,29 @@ class LyricsAnalysisProcessor:
         )
         return unanalyzed_track_df
 
-    def compute_batch(self, track_batch_df):
+    def compute_batch(
+        self, track_batch_df: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         return self._analyzer.analyze(track_batch_df)
 
-    def load_batch(self, batch_result):
+    def load_batch(self, batch_result: tuple[pd.DataFrame, pd.DataFrame]) -> None:
         lyrics_metric_df, lyrics_ngram_metric_df = batch_result
         self._loader.copy_to_db(lyrics_metric_df, LYRICS_METRIC_TABLE)
         self._loader.copy_to_db(lyrics_ngram_metric_df, LYRICS_NGRAM_METRIC_TABLE)
 
 
 class LyricsTopicProcessor:
-    def __init__(self, extractor, loader, analyzer):
+    def __init__(
+        self,
+        extractor: Extractor,
+        loader: Loader,
+        analyzer: LyricsTopicAnalyzer | SnapshotLyricsTopicAnalyzer,
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._analyzer = analyzer
 
-    def select_pending(self):
+    def select_pending(self) -> pd.DataFrame:
         track_df = self._extractor.extract_from_db(TRACK_TABLE)
         uncategorized_track_df = self._analyzer.select_uncategorized(
             track_df, self._extractor.extract_from_db(LYRICS_TOPIC_TABLE)
@@ -460,10 +504,10 @@ class LyricsTopicProcessor:
         )
         return uncategorized_track_df
 
-    def compute_batch(self, track_batch_df):
+    def compute_batch(self, track_batch_df: pd.DataFrame) -> pd.DataFrame:
         return self._analyzer.analyze(track_batch_df)
 
-    def load_batch(self, batch_result):
+    def load_batch(self, batch_result: pd.DataFrame) -> None:
         self._loader.copy_to_db(batch_result, LYRICS_TOPIC_TABLE)
 
 
@@ -484,12 +528,14 @@ class LyricsTopicSnapshotProcessor:
         ANALYSIS_VERSION_COLUMN,
     )
 
-    def __init__(self, extractor, loader, snapshot_csv_path):
+    def __init__(
+        self, extractor: Extractor, loader: Loader, snapshot_csv_path: str | Path
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._snapshot_csv_path = snapshot_csv_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting lyrics topic snapshot export")
         snapshot_df = self._extractor.extract_snapshot(
             self._snapshot_csv_path, self.SNAPSHOT_COLUMNS
@@ -509,7 +555,12 @@ class LyricsTopicSnapshotProcessor:
         self._loader.save_to_csv(merged_snapshot_df, self._snapshot_csv_path)
         logger.info("Completed lyrics topic snapshot export")
 
-    def _build_snapshot_rows(self, lyrics_topic_df, track_df, topic_df):
+    def _build_snapshot_rows(
+        self,
+        lyrics_topic_df: pd.DataFrame,
+        track_df: pd.DataFrame,
+        topic_df: pd.DataFrame,
+    ) -> pd.DataFrame:
         return (
             lyrics_topic_df.merge(
                 track_df[

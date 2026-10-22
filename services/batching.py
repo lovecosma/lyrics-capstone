@@ -1,12 +1,27 @@
 import logging
+from collections.abc import Sequence
 from itertools import batched
+from typing import Protocol
 
-from services.etl import TRACK_ID_COLUMN
+import pandas as pd
+from sqlalchemy import Connection
+
+from services.etl import TRACK_ID_COLUMN, Extractor
 
 logger = logging.getLogger(__name__)
 
 
-def plan_track_batches(conn, processor, batch_size):
+class TrackBatchProcessor[BatchResult](Protocol):
+    def select_pending(self) -> pd.DataFrame: ...
+
+    def compute_batch(self, track_batch_df: pd.DataFrame) -> BatchResult: ...
+
+    def load_batch(self, batch_result: BatchResult) -> None: ...
+
+
+def plan_track_batches[BatchResult](
+    conn: Connection, processor: TrackBatchProcessor[BatchResult], batch_size: int
+) -> list[tuple[int, ...]]:
     with conn.begin():
         pending_track_ids = processor.select_pending()[TRACK_ID_COLUMN].tolist()
     track_id_batches = list(batched(pending_track_ids, batch_size))
@@ -19,7 +34,12 @@ def plan_track_batches(conn, processor, batch_size):
     return track_id_batches
 
 
-def process_track_batch(conn, extractor, processor, track_ids):
+def process_track_batch[BatchResult](
+    conn: Connection,
+    extractor: Extractor,
+    processor: TrackBatchProcessor[BatchResult],
+    track_ids: Sequence[int],
+) -> None:
     with conn.begin():
         track_batch_df = extractor.extract_tracks(track_ids)
     batch_result = processor.compute_batch(track_batch_df)
@@ -27,7 +47,12 @@ def process_track_batch(conn, extractor, processor, track_ids):
         processor.load_batch(batch_result)
 
 
-def run_in_batches(conn, extractor, processor, batch_size):
+def run_in_batches[BatchResult](
+    conn: Connection,
+    extractor: Extractor,
+    processor: TrackBatchProcessor[BatchResult],
+    batch_size: int,
+) -> None:
     track_id_batches = plan_track_batches(conn, processor, batch_size)
     for batch_number, track_ids in enumerate(track_id_batches, start=1):
         logger.info("Processing batch %d of %d", batch_number, len(track_id_batches))

@@ -345,3 +345,152 @@
   - pandas
 - Outputs: 
   - Dataframe of economic indicators, ready to load into the economic_indicator table
+
+
+## Lyrics Analysis Processor
+- Inputs: Extractor, Loader, LyricsAnalyzer
+- Purpose: 
+  - Compute lyric metrics (word count, unique words, lexical diversity, average word length) and n-gram frequencies for each track
+- Interesting Parts: 
+  - Built to run in batches. Selects pending tracks to analyze, compute_batch analyzes one batch, load_batch writes it, and each batch commits on its own
+  - Skips tracks already analyzed with the current analysis version
+  - Writes results with COPY, because n-grams produce many rows per track
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the lyrics_metric and lyrics_ngram_metric tables
+
+
+## Lyrics Analyzer
+- Inputs: non-content word set (stopwords, lyric stopwords and filler words), track dataframe (track_id, lyrics)
+- Purpose: 
+  - Turn each track's raw lyrics into one row of word metrics and many rows of n-gram frequencies
+- Interesting Parts: 
+  Steps following Billboard's 2003 "Crazy in Love" by "Beyonce":
+    1. Skip analyzed tracks: select_unanalyzed drops tracks that already have a lyrics_metric row for the current ANALYSIS_VERSION
+    2. Clean: LyricsCleaner removes scrape artifacts and section headers
+      - Artifacts: "3 ContributorsHello Lyrics", "See Adele LiveGet tickets as low as $45", "You might also like", trailing "Embed"
+      - Section headers in brackets, dashes or bare: [Chorus], (Verse 2), -CHORUS-, Hook x2, [Verse 1: Drake]
+    3. Tokenize: LyricsTokenizer splits lyrics into lines of lowercase words
+      - Curly apostrophes become straight ones and zero-width spaces are removed
+      - Keeps apostrophes inside words but drops them at the ends, and splits on hyphens and underscores
+      - Empty lines are dropped, and lines are kept so n-grams don't cross line breaks
+      - Example: "When you leave, I'm beggin' you not to go" → when, you, leave, i'm, beggin, you, not, to, go; "Uh-oh, uh-oh" → uh, oh, uh, oh
+    4. Compute word metrics: one lyrics_metric row per track
+      - word_count and unique_word_count
+      - lexical_diversity is MTLD (lexicalrichness), which unlike a plain unique/total ratio doesn't drop just because a song is longer
+        - MTLD reads the words in order and tracks the share of unique words seen so far. The score is the total word count divided by the number of segments. It's the average run of words before the song starts repeating itself. 
+    5. Count n-grams: every 1-, 2- and 3-word sequence within a line, with its frequency in the song
+      - Example: "Got me looking so crazy right now" gives got, got me, got me looking, me, me looking, me looking so, ...
+    6. Drop non-content n-grams: an n-gram is kept unless every word in it is a non-content word
+      - Example: "uh oh" (37 times) and "oh" (54) are dropped, but "so crazy" (31) stays because "crazy" is content; 184 of 922 n-grams are dropped
+      - Example: the top n-grams kept are "got" (41), "got me" (39) and "crazy" (34)
+- Key Tech:
+  - re patterns for scrape artifacts and section headers
+  - nltk (RegexpTokenizer, everygrams, FreqDist)
+    - RegexpTokenizer splits text into tokens by returning every match of a regex. Here the pattern grabs runs of letters and digits
+    - everygrams returns every run of consecutive words in a sequence with a length from a minimum to a maximum
+    - FreqDist counts how many times each item appears. Passing it the n-grams gives each one's frequency in the song
+  - lexicalrichness (MTLD)
+  - pandas
+- Outputs: 
+  - lyrics_metric dataframe: track_id, word_count, unique_word_count, lexical_diversity, average_word_length, analysis_version
+  - lyrics_ngram_metric dataframe: track_id, ngram, n, frequency, analysis_version
+
+
+## Lyrics Cleaner
+- Inputs: raw lyrics string
+- Purpose: 
+  - Scrape artifacts and section headers (as much as possible :/) so they aren't counted as lyrics
+  - Shared by LyricsAnalyzer and LyricsTopicAnalyzer
+- Interesting Parts: 
+  - Artifacts are replaced with a line break, so lyrics on either side don't join into one line and a header stuck to an artifact ends up on its own line
+  - Then removes section headers in brackets, dashes or bare
+  - Headers are only removed when they're alone on a line, so a lyric like "Sing the chorus" stays
+  - The header pattern is built from small named regex patterns
+- Key Tech:
+  - re
+- Outputs: 
+  - Cleaned lyrics string, with line breaks kept for tokenizing
+
+
+## Lyrics Tokenizer
+- Inputs: cleaned lyrics string (from LyricsCleaner)
+- Purpose: 
+  - Split lyrics into lines of lowercase words for LyricsAnalyzer's word metrics and n-grams
+- Interesting Parts: 
+  - Turns curly apostrophes into straight ones and removes zero-width spaces, so "don’t" and "don't" count as the same word
+  - Uses casefold, so "Straße" and "STRASSE" both become "strasse"
+  - A word is a run of letters or digits, and apostrophes are kept inside it: "rock'n'roll" stays one word, "lovin'" becomes "lovin"
+  - Hyphens, underscores and other punctuation split words: "Uh-oh" → uh, oh; "rock'n'roll_2am" → rock'n'roll, 2am
+  - Accented letters count as letters, so "café" stays whole
+  - Keeps one list per line and drops empty lines
+- Key Tech:
+  - nltk RegexpTokenizer
+- Outputs: 
+  - List of lines, each a list of words
+
+
+## Snapshot Lyrics Topic Analyzer(TopicAnalyzer)
+- Inputs: topic dataframe (from the topic table), snapshot dataframe (from typesafe_lyrics_topics.csv), track dataframe
+- Purpose: 
+  - Restore TypeSafe topic results from a saved CSV snapshot instead of calling the API again
+- Interesting Parts: 
+  - Matches snapshot rows to tracks by title and artist name
+  - Only uses snapshot rows for the current ANALYSIS_VERSION
+  - Maps topic names back to the topic table's IDs and drops any topic that's no longer in the table
+  - skip tracks already categorized
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of track_id, topic_id, is_primary, primary_probability, presence_probability, model_version and analysis_version, ready to load into the lyrics_topic table
+
+
+## Lyrics Topic Processor
+- Inputs: Extractor, Loader, topic analyzer (SnapshotLyricsTopicAnalyzer or LyricsTopicAnalyzer)
+- Purpose: 
+  - Categorize each track's lyrics into topics, with primary and presence probabilities
+- Interesting Parts: 
+  - Built to run in batches. Selects pending tracks to categorize, compute_batch categorizes one batch, load_batch writes it, and each batch commits on its own
+  - Skips tracks already categorized with the current analysis version
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the lyrics_topic table
+
+
+## Lyrics Topic Analyzer(TopicAnalyzer)
+- Inputs: topic dataframe (from the topic table), TypeSafe client factory, track dataframe
+- Purpose: 
+  - Categorize each track's lyrics into topics with the TypeSafe API
+- Interesting Parts: 
+  - Asks every question in one request per track: a Choice for the main topic, plus a Noul (yes/no probability) for each topic's presence
+  - The topic descriptions from the topic table are the Choice options and the Noul themes, so changing topics.csv changes the questions
+  - Writes one row per topic per track: is_primary, the main-topic probability, and the presence probability
+  - A failed request logs a warning and skips the track, so it's retried on the next run
+- Key Tech:
+  - TypeSafe SDK (async client, Choice, Noul)
+  - asyncio
+  - pandas
+- Outputs: 
+  - Dataframe of track_id, topic_id, is_primary, primary_probability, presence_probability, model_version and analysis_version, ready to load into the lyrics_topic table
+
+
+## Lyrics Topic Snapshot Processor
+- Inputs: Extractor, Loader, snapshot CSV path (typesafe_lyrics_topics.csv)
+- Purpose: 
+  - Save the lyrics_topic results to a CSV snapshot so SnapshotLyricsTopicAnalyzer can restore them after a database rebuild instead of calling TypeSafe again
+- Interesting Parts: 
+  - Uses artist name and topic name for ID since actual IDs change when the database is rebuilt
+  - new rows are appended to the existing CSV
+  - Duplicates are keyed by title, artist, topic and analysis version, so results from older versions are kept alongside new ones
+  - Loader writes to a temp file and then replaces the CSV, so a crash never leaves a half-written snapshot
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - writes the merged snapshot to typesafe_lyrics_topics.csv
+
+

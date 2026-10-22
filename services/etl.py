@@ -231,7 +231,6 @@ class Loader:
     def save_to_csv(self, df: pd.DataFrame, file_path: str | Path) -> None:
         logger.info("Saving %d rows to CSV at %s", len(df), file_path)
         file_path = Path(file_path)
-        # Written to a temp file first, so a crash never leaves a half-written CSV
         temp_path = file_path.with_name(f"{file_path.name}{self.TEMP_FILE_SUFFIX}")
         df.to_csv(temp_path, index=False)
         temp_path.replace(file_path)
