@@ -10,7 +10,7 @@ import pandas as pd
 logger = logging.getLogger(__name__)
 
 
-def normalize_name(names):
+def normalize_name(names: pd.Series) -> pd.Series:
     return names.str.strip().str.lower()
 
 
@@ -295,7 +295,7 @@ class TrackMerger:
 
 
 class GenreTransformer:
-    def transform(self, track_df):
+    def transform(self, track_df: pd.DataFrame) -> pd.DataFrame:
         genre_df = (
             track_df["genre"]
             .pipe(normalize_name)
@@ -312,7 +312,7 @@ class BroadGenreTransformer:
     NAME_COLUMN = "name"
     BROAD_GENRE_COLUMN = "broad_genre"
 
-    def transform(self, genre_mapping_df):
+    def transform(self, genre_mapping_df: pd.DataFrame) -> pd.DataFrame:
         broad_genre_df = (
             genre_mapping_df[self.BROAD_GENRE_COLUMN]
             .str.strip()
@@ -333,7 +333,12 @@ class GenreMappingTransformer:
     BROAD_GENRE_ID_COLUMN = "broad_genre_id"
     UNMAPPED_SEPARATOR = ", "
 
-    def transform(self, db_genre_df, db_broad_genre_df, genre_mapping_df):
+    def transform(
+        self,
+        db_genre_df: pd.DataFrame,
+        db_broad_genre_df: pd.DataFrame,
+        genre_mapping_df: pd.DataFrame,
+    ) -> pd.DataFrame:
         genre_mapping_df = genre_mapping_df.assign(
             **{
                 self.GENRE_COLUMN: normalize_name(genre_mapping_df[self.GENRE_COLUMN]),
@@ -427,7 +432,12 @@ class TrackTransformer:
 
 
 class TrackGenreTransformer:
-    def transform(self, db_track_df, db_genre_df, source_track_df):
+    def transform(
+        self,
+        db_track_df: pd.DataFrame,
+        db_genre_df: pd.DataFrame,
+        source_track_df: pd.DataFrame,
+    ) -> pd.DataFrame:
         track_df = db_track_df.merge(
             source_track_df[["track_name", "artist_name", "genre"]],
             how="left",

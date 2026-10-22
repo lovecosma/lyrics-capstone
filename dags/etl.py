@@ -15,12 +15,20 @@ from services.etl import (
     EmotionLexiconProcessor,
     Extractor,
     FredExtractor,
+    GenreMappingProcessor,
     Loader,
     NrcLexiconExtractor,
     ProfanityProcessor,
     TopicProcessor,
     TrackProcessor,
 )
+from services.genre_enrichment import (
+    GenreEnrichmentProcessor,
+    GenreSnapshotProcessor,
+    SnapshotGenreEnricher,
+    TrackGenreEnricher,
+)
+from services.itunes import ITunesClient
 from services.lyrics_analysis import (
     LyricsAnalysisProcessor,
     LyricsAnalyzer,
@@ -53,6 +61,12 @@ NON_CONTENT_WORD_PATHS = (
 LYRICS_ANALYSIS_BATCH_SIZE = 500
 LYRICS_TOPIC_SNAPSHOT_PATH = f"{DATA_DIR}/typesafe_lyrics_topics.csv"
 TYPESAFE_API_KEY_VARIABLE = "typesafe_ai_api_key"
+GENRE_SNAPSHOT_PATH = f"{DATA_DIR}/itunes_track_genres.csv"
+GENRE_MAPPING_PATH = f"{DATA_DIR}/genre_mapping.csv"
+GENRE_SNAPSHOT_BATCH_SIZE = 500
+GENRE_SEARCH_BATCH_SIZE = 50
+# ITunesClient's rate limit only holds for one client at a time
+MAX_ACTIVE_ITUNES_SEARCHES = 1
 
 
 @dag(
@@ -200,7 +214,67 @@ def etl_dag():
             >> export_lyrics_topic_snapshot()
         )
 
-    (schema_sql >> views_sql >> etl() >> lyrics_analysis())
+    @task_group()
+    def genre_enrichment():
+        @task()
+        def load_genre_snapshot():
+            engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+            with engine.connect() as conn:
+                extractor = Extractor(conn)
+                snapshot_df = extractor.extract_snapshot(
+                    GENRE_SNAPSHOT_PATH,
+                    SnapshotGenreEnricher.SNAPSHOT_COLUMNS,
+                    parse_dates=[SnapshotGenreEnricher.GENRE_SEARCHED_AT_COLUMN],
+                )
+                processor = GenreEnrichmentProcessor(
+                    extractor, Loader(conn), SnapshotGenreEnricher(snapshot_df)
+                )
+                run_in_batches(conn, extractor, processor, GENRE_SNAPSHOT_BATCH_SIZE)
+            engine.dispose()
+
+        @task(max_active_tis_per_dag=MAX_ACTIVE_ITUNES_SEARCHES)
+        def search_itunes_genres():
+            engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+            with engine.connect() as conn:
+                extractor = Extractor(conn)
+                processor = GenreEnrichmentProcessor(
+                    extractor, Loader(conn), TrackGenreEnricher(ITunesClient)
+                )
+                run_in_batches(conn, extractor, processor, GENRE_SEARCH_BATCH_SIZE)
+            engine.dispose()
+
+        @task()
+        def export_genre_snapshot():
+            engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+            with engine.begin() as conn:
+                GenreSnapshotProcessor(
+                    Extractor(conn), Loader(conn), GENRE_SNAPSHOT_PATH
+                ).process()
+            engine.dispose()
+
+        @task()
+        def map_genres():
+            engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+            with engine.begin() as conn:
+                GenreMappingProcessor(
+                    Extractor(conn), Loader(conn), GENRE_MAPPING_PATH
+                ).process()
+            engine.dispose()
+
+        (
+            load_genre_snapshot()
+            >> search_itunes_genres()
+            >> export_genre_snapshot()
+            >> map_genres()
+        )
+
+    (
+        schema_sql
+        >> views_sql
+        >> etl()
+        >> lyrics_analysis()
+        >> genre_enrichment()
+    )
 
 
 etl_dag()

@@ -494,3 +494,153 @@
   - No returned output - writes the merged snapshot to typesafe_lyrics_topics.csv
 
 
+## Genre Enrichment Processor
+- Inputs: Extractor, Loader, genre enricher (SnapshotGenreEnricher or TrackGenreEnricher)
+- Purpose: 
+  - Give each track an iTunes genre and explicit flag
+- Interesting Parts: 
+  - Built to run in batches. Selects pending tracks, compute_batch enriches one batch, load_batch writes it, and each batch commits on its own
+  - Skips tracks that already have a genre or were already searched (genre_searched_at)
+  - Loads only genres not already in the genre table, links tracks to them, then updates is_explicit and genre_searched_at on the track table
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the genre and track_genre tables and updates the track table
+
+
+## Genre Enricher
+- Inputs: track dataframe, track_genre dataframe, genre dataframe
+- Purpose: 
+  - Shared selection logic for the snapshot and iTunes enrichers
+- Interesting Parts: 
+  - select_missing picks tracks with no genre that haven't been searched
+  - select_new_genres keeps only genres not already in the genre table
+  - select_explicit keeps tracks whose explicit flag is known
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframes of tracks or genres to load
+
+
+## Snapshot Genre Enricher(GenreEnricher)
+- Inputs: snapshot dataframe (from itunes_track_genres.csv), track dataframe
+- Purpose: 
+  - Restore iTunes genres from a saved CSV snapshot instead of searching again
+- Interesting Parts: 
+  - Matches snapshot rows to tracks by title and artist name
+- Key Tech:
+  - pandas
+- Outputs: 
+  - GenreSearchResult: tracks with a genre, and tracks that were searched
+
+
+## Track Genre Enricher(GenreEnricher)
+- Inputs: iTunes client factory, track dataframe
+- Purpose: 
+  - Search iTunes for each track and take the genre and explicit flag of the best matching song
+- Interesting Parts: 
+  - Searches by title and primary artist (without "feat." credits)
+  - Reuses TrackMerger to pick the best result, with the release year as the candidate year and earlier search results ranked as more popular
+  - iTunes "cleaned" (the edited version of an explicit song) counts as explicit
+- Key Tech:
+  - TrackMerger
+  - pandas
+- Outputs: 
+  - GenreSearchResult: tracks with a genre, and tracks that were searched
+
+
+## iTunes Client
+- Inputs: optional requests session
+- Purpose: 
+  - Search the iTunes Search API for songs
+- Interesting Parts: 
+  - Waits at least 3 seconds between requests
+  - Retries throttled requests with exponential backoff, up to 3 attempts
+  - The rate limit is per client, so the DAG's search task allows only one running instance
+- Key Tech:
+  - requests
+- Outputs: 
+  - List of iTunes song results
+
+
+## Genre Snapshot Processor
+- Inputs: Extractor, Loader, snapshot CSV path (itunes_track_genres.csv)
+- Purpose: 
+  - Save track genres to a CSV snapshot so SnapshotGenreEnricher can restore them
+  - Uses title and artist name instead
+  - Keeps searched tracks with no match, so they aren't searched again
+  - New rows are appended to the existing CSV
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - writes the merged snapshot to itunes_track_genres.csv
+
+## Genre Mapping Processor
+- Inputs: Extractor, Loader, genre mapping CSV path (genre_mapping.csv)
+- Purpose: 
+  - Group iTunes genres into broad genres (Pop, Hip-Hop/Rap, ...) for analysis
+- Interesting Parts: 
+  - Loads only broad genres not already in the table
+  - Sets broad_genre_id on each genre by name
+  - logs any genre with no mapping
+- Key Tech:
+  - pandas
+  - SQLAlchemy connection
+- Outputs: 
+  - No returned output - loads data to the broad_genre table and updates the genre table
+
+
+## Genre Transformer
+- Inputs: source track dataframe (from a genre enricher)
+- Purpose: 
+  - Build the unique genre names for the genre table
+- Interesting Parts: 
+  - Trims and lowercases genre names, so iTunes' "Hip-Hop/Rap" is stored as "hip-hop/rap"
+  - Drops missing and duplicate genres
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of genre names, ready to load into the genre table
+
+
+## Track Genre Transformer
+- Inputs: track dataframe from the DB, genre dataframe read back from the DB, source track dataframe (from a genre enricher)
+- Purpose: 
+  - Link each track to its genre by ID
+- Interesting Parts: 
+  - Matches source rows to tracks by title and artist name
+  - Normalizes genre names the same way as GenreTransformer, then joins on name to get the genre IDs from the DB
+  - Tracks with no genre are dropped, and duplicate links are removed
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of track_id and genre_id, ready to load into the track_genre table
+
+
+## Broad Genre Transformer
+- Inputs: genre mapping dataframe (from genre_mapping.csv)
+- Purpose: 
+  - Build the unique broad genre names for the broad_genre table
+- Interesting Parts: 
+  - Drops missing and duplicate broad genres
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of broad genre names, ready to load into the broad_genre table
+
+
+## Genre Mapping Transformer
+- Inputs: genre dataframe read back from the DB, broad genre dataframe read back from the DB, genre mapping dataframe (from genre_mapping.csv)
+- Purpose: 
+  - Pair each genre's ID with its broad genre's ID
+- Interesting Parts: 
+  - Normalizes the CSV's genre names the same way as GenreTransformer, so they match the names in the DB
+  - Joins genre → mapping → broad genre to swap names for IDs
+- Key Tech:
+  - pandas
+- Outputs: 
+  - Dataframe of genre_id and broad_genre_id, used to update the genre table
+
+

@@ -345,12 +345,14 @@ class TopicProcessor:
 
 
 class GenreMappingProcessor:
-    def __init__(self, extractor, loader, genre_mapping_csv_path):
+    def __init__(
+        self, extractor: Extractor, loader: Loader, genre_mapping_csv_path: str | Path
+    ) -> None:
         self._extractor = extractor
         self._loader = loader
         self._genre_mapping_csv_path = genre_mapping_csv_path
 
-    def process(self):
+    def process(self) -> None:
         logger.info("Starting genre mapping ETL")
         genre_mapping_df = self._extractor.extract_from_csv(
             self._genre_mapping_csv_path
@@ -369,7 +371,7 @@ class GenreMappingProcessor:
         )
         logger.info("Completed genre mapping ETL")
 
-    def _select_new_broad_genres(self, genre_mapping_df):
+    def _select_new_broad_genres(self, genre_mapping_df: pd.DataFrame) -> pd.DataFrame:
         broad_genre_df = BroadGenreTransformer().transform(genre_mapping_df)
         is_loaded = broad_genre_df[BroadGenreTransformer.NAME_COLUMN].isin(
             self._extractor.extract_from_db(BROAD_GENRE_TABLE)[
