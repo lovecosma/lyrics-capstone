@@ -188,3 +188,39 @@
 ## Database
 - Moved the profanity word list into the database
 - Added SQL views (chart entries, genre per track, strong profanity, lyric words, track topics) to simplify the dashboard queries
+
+# 10/21/2026
+
+## Moving into Airflow
+- connected to PG docker container
+- confirmed schema loads and views are created
+- copies ETL steps from main into Airflow DAG
+- groups related tasks into task groups
+- adds type hints to ETL pipeline
+- used DBeaver to connect to PG container and check that data is present after each pipeline add
+- nailed down exact sequence of events for restoring from and updating snapshot
+  - restore from snapshot
+  - filter tracks without data from snapshot
+  - make live call for filtered tracks
+  - add new data to csv
+  - writes to temp file first so that midway crashes don't result in incomplete transactions
+  - runs only one search task at a time in Airflow
+  
+## Documenting ETL
+- as I transferred ETL into airflow, I reviewed and documented each step making code changes as necessary
+
+# 10/22/2026
+
+## Finishing Airflow migration
+- Adds lyric analysis to pipeline
+- Adds genre enrichment to pipeline 
+  - uses same snapshot restore pattern as lyrics analysis
+- Adds remaining type hints
+
+## Finishing ETL Docs
+- Documents remaining ETL steps
+
+## Starting Dash App documentation
+- Documents Postgres views
+- Documents repos and their queries
+- Reviewing code and make changes as necessary

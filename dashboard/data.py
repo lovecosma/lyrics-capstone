@@ -169,11 +169,11 @@ class VocabularyRepository:
           and split_part(m.ngram, ' ', 2) not in (select word from {LYRICS_SCHEMA}.strong_profanity_word)
         group by ct.category, m.ngram
         union all
-        select ct.category, %(profanity_term)s, count(distinct lw.track_id)
-        from {LYRICS_SCHEMA}.lyrics_word lw
-        join category_track ct on ct.track_id = lw.track_id
-        where lw.analysis_version = %(analysis_version)s
-          and lw.is_explicit
+        select ct.category, %(profanity_term)s, count(*)
+        from {LYRICS_SCHEMA}.track_explicit te
+        join category_track ct on ct.track_id = te.track_id
+        where te.analysis_version = %(analysis_version)s
+          and te.has_explicit
         group by ct.category
       ),
       scored as (
@@ -343,32 +343,32 @@ class VocabularyRepository:
 
 class ExplicitRepository:
     YEAR_RATES_SQL = f"""
-    select
-      ce.year,
-      sum(te.explicit_word_count) * %(words_per_rate)s::float / sum(te.word_count)
-        as explicit_rate,
-      count(*) filter (where te.has_explicit) * %(percent)s::float / count(*)
-        as explicit_song_share
-    from {LYRICS_SCHEMA}.chart_entry ce
-    join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
-    where te.analysis_version = %(analysis_version)s
-    group by ce.year
-    order by ce.year
+      select
+        ce.year,
+        sum(te.explicit_word_count) * %(words_per_rate)s::float / sum(te.word_count)
+          as explicit_rate,
+        count(*) filter (where te.has_explicit) * %(percent)s::float / count(*)
+          as explicit_song_share
+      from {LYRICS_SCHEMA}.chart_entry ce
+      join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
+      where te.analysis_version = %(analysis_version)s
+      group by ce.year
+      order by ce.year
     """
     BREAKDOWN_COUNTS_SQL = f"""
-    select
-      ce.year,
-      ce.broad_genre,
-      tt.topic as main_topic,
-      count(*) filter (where te.has_explicit) as explicit_entry_count,
-      count(*) as entry_count
-    from {LYRICS_SCHEMA}.chart_entry ce
-    join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
-    join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
-    where te.analysis_version = %(lyrics_analysis_version)s
-      and tt.is_primary
-      and tt.analysis_version = %(topic_analysis_version)s
-    group by ce.year, ce.broad_genre, tt.topic
+      select
+        ce.year,
+        ce.broad_genre,
+        tt.topic as main_topic,
+        count(*) filter (where te.has_explicit) as explicit_entry_count,
+        count(*) as entry_count
+      from {LYRICS_SCHEMA}.chart_entry ce
+      join {LYRICS_SCHEMA}.track_explicit te on te.track_id = ce.track_id
+      join {LYRICS_SCHEMA}.track_topic tt on tt.track_id = ce.track_id
+      where te.analysis_version = %(lyrics_analysis_version)s
+        and tt.is_primary
+        and tt.analysis_version = %(topic_analysis_version)s
+      group by ce.year, ce.broad_genre, tt.topic
     """
 
     def __init__(self, engine):
@@ -402,31 +402,36 @@ class EmotionRepository:
 
     def get_year_shares(self):
         sql = f"""
-    with year_word as (
-      select ce.year, lw.word, sum(lw.frequency) as frequency
-      from {LYRICS_SCHEMA}.lyrics_word lw
-      join {LYRICS_SCHEMA}.chart_entry ce on ce.track_id = lw.track_id
-      where lw.analysis_version = %(analysis_version)s
-        and not lw.is_explicit
-      group by ce.year, lw.word
-    ),
-    year_total as (
-      select year, sum(frequency) as frequency
-      from year_word
-      group by year
-    )
-    select
-      yw.year,
-      em.display_name as emotion,
-      sum(yw.frequency)::int as word_count,
-      yt.frequency::int as year_word_count,
-      sum(yw.frequency) * %(percent)s::float / yt.frequency as word_share
-    from year_word yw
-    join {LYRICS_SCHEMA}.word_emotion we on we.word = yw.word
-    join {LYRICS_SCHEMA}.emotion em on em.emotion_id = we.emotion_id
-    join year_total yt on yt.year = yw.year
-    group by yw.year, em.display_name, yt.frequency
-    """
+          with year_word as (
+            select 
+              ce.year, 
+              lw.word, 
+              sum(lw.frequency) as frequency
+            from {LYRICS_SCHEMA}.lyrics_word lw
+            join {LYRICS_SCHEMA}.chart_entry ce on ce.track_id = lw.track_id
+            where lw.analysis_version = %(analysis_version)s
+              and not lw.is_explicit
+            group by ce.year, lw.word
+          ),
+          year_total as (
+            select 
+              year, 
+              sum(frequency) as frequency
+            from year_word
+            group by year
+          )
+          select
+            yw.year,
+            em.display_name as emotion,
+            sum(yw.frequency)::int as word_count,
+            yt.frequency::int as year_word_count,
+            sum(yw.frequency) * %(percent)s::float / yt.frequency as word_share
+          from year_word yw
+          join {LYRICS_SCHEMA}.word_emotion we on we.word = yw.word
+          join {LYRICS_SCHEMA}.emotion em on em.emotion_id = we.emotion_id
+          join year_total yt on yt.year = yw.year
+          group by yw.year, em.display_name, yt.frequency
+        """
         return pd.read_sql(
             sql,
             self._engine,
@@ -443,15 +448,15 @@ class EconomyRepository:
 
     def get_year_averages(self):
         sql = f"""
-    select
-      ei.display_name as indicator,
-      extract(year from eo.observation_date)::int as year,
-      avg(eo.value)::float as value
-    from {LYRICS_SCHEMA}.economic_observation eo
-    join {LYRICS_SCHEMA}.economic_indicator ei
-      on ei.economic_indicator_id = eo.economic_indicator_id
-    group by ei.display_name, extract(year from eo.observation_date)
-    """
+          select
+            ei.display_name as indicator,
+            extract(year from eo.observation_date)::int as year,
+            avg(eo.value)::float as value
+          from {LYRICS_SCHEMA}.economic_observation eo
+          join {LYRICS_SCHEMA}.economic_indicator ei
+            on ei.economic_indicator_id = eo.economic_indicator_id
+          group by ei.display_name, extract(year from eo.observation_date)
+        """
         return pd.read_sql(sql, self._engine)
 
 
@@ -461,21 +466,21 @@ class SoundRepository:
 
     def get_year_averages(self):
         sql = f"""
-    select
-      ce.year,
-      count(t.duration_ms) * %(percent)s::float / count(*) as matched_share,
-      avg(t.duration_ms) / %(ms_per_minute)s::float as minutes,
-      avg(t.valence)::float as valence,
-      avg(t.energy)::float as energy,
-      avg(t.danceability)::float as danceability,
-      avg(t.acousticness)::float as acousticness,
-      avg(t.speechiness)::float as speechiness
-    from {LYRICS_SCHEMA}.chart_entry ce
-    join {LYRICS_SCHEMA}.track t on t.track_id = ce.track_id
-    where ce.year <= %(last_year)s
-    group by ce.year
-    order by ce.year
-    """
+          select
+            ce.year,
+            count(t.duration_ms) * %(percent)s::float / count(*) as matched_share,
+            avg(t.duration_ms) / %(ms_per_minute)s::float as minutes,
+            avg(t.valence)::float as valence,
+            avg(t.energy)::float as energy,
+            avg(t.danceability)::float as danceability,
+            avg(t.acousticness)::float as acousticness,
+            avg(t.speechiness)::float as speechiness
+          from {LYRICS_SCHEMA}.chart_entry ce
+          join {LYRICS_SCHEMA}.track t on t.track_id = ce.track_id
+          where ce.year <= %(last_year)s
+          group by ce.year
+          order by ce.year
+        """
         return pd.read_sql(
             sql,
             self._engine,

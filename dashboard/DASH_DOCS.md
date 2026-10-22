@@ -1,6 +1,6 @@
 # Dashboard Documentation
 
-## Views (sql/lyrics-views.sql)
+## Views 
 The repositories query these views instead of the raw tables. They're created by the DAG's billboard_views task, right after the schema.
 
 
@@ -72,7 +72,7 @@ The repositories query these views instead of the raw tables. They're created by
 ## track_explicit
 - Inputs: lyrics_word view
 - Purpose: 
-  - Each track's word count and strong profanity count, for the explicit language queries
+  - Each track's word count and strong profanity count, for the explicit language queries and the "[strong profanity]" distinctive term
 - Interesting Parts: 
   - Rolls up lyrics_word once per track and analysis version, so the explicit queries just join it to chart_entry
   - Tracks with no strong profanity get an explicit_word_count of 0 instead of NULL
@@ -175,3 +175,50 @@ The repositories query these views instead of the raw tables. They're created by
 - Outputs: 
   - get_year_rates: dataframe of year, explicit_rate and explicit_song_share
   - get_breakdown_counts: dataframe of year, broad_genre, main_topic, explicit_entry_count and entry_count
+
+
+## Emotion Repository
+- Inputs: SQLAlchemy engine
+- Purpose: 
+  - Query the emotion data behind the Emotion sheet
+- Interesting Parts: 
+  - get_year_shares gives the % of each year's lyric words that carry each NRC emotion
+  - Counts word occurrences (frequency)
+  - Strong profanity words are left out of both the emotion counts and the year's total
+  - The year's total includes words with no emotion
+  - Analysis version and percent scale are passed as query parameters
+- Key Tech:
+  - pandas
+  - CTEs
+    - to total each year's words once before joining the lexicon
+- Outputs: 
+  - get_year_shares: dataframe of year, emotion, word_count, year_word_count and word_share
+
+
+## Economy Repository
+- Inputs: SQLAlchemy engine
+- Purpose: 
+  - Query the economic data behind the Economy sheet
+- Interesting Parts: 
+  - get_year_averages averages each FRED indicator's observations by calendar year
+  - Returns every indicator over every year it has data. I filter  which data to use on frontend.
+- Key Tech:
+  - pandas
+- Outputs: 
+  - get_year_averages: dataframe of indicator, year and value
+
+
+## Sound Repository
+- Inputs: SQLAlchemy engine
+- Purpose: 
+  - Query the Spotify audio data behind the Sound sheet
+- Interesting Parts: 
+  - get_year_averages averages each year's song length (in minutes) and Spotify audio features: valence, energy, danceability, acousticness and speechiness
+  - matched_share is the % of each year's entries that have Spotify data; the song length chart shows it on hover
+  - Stops at 2022
+  - Counts chart entries, not unique songs
+  - Percent scale, ms-per-minute and the last year are passed as query parameters
+- Key Tech:
+  - pandas
+- Outputs: 
+  - get_year_averages: dataframe of year, matched_share, minutes, valence, energy, danceability, acousticness and speechiness
