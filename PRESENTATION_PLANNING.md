@@ -68,7 +68,7 @@ Main question: What are trends in lyrical content and sound quality in Billboard
   - created by TypeSafe
   - Link: https://typesafe.ai/blog/introducing-system-one-models-and-jev
   - Main lyrical topic for each song, classified from its lyrics
-  - Citation: TypeSafe. (2026). *Jev* (Version 1.13.0) [Computer software].
+  - Citation: TypeSafe. (2026). *Jev* (Version 1.13.0) [Computer software]. Retrieved October 14, 2026, from https://typesafe.ai/blog/introducing-system-one-models-and-jev
   - Shape: 22,451 rows × 8 columns (snapshot CSV of API results, 10 topics per song)
     - title: song title
     - artist_name: artist credit

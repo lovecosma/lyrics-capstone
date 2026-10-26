@@ -289,3 +289,9 @@ The repositories query these views instead of the raw tables. They're created by
   - pandas
 - Outputs: 
   - get_year_averages: dataframe of year, matched_share, minutes, valence, energy, danceability, acousticness and speechiness
+
+
+  Feedback:
+  - What words being used in Party and Celebration given Unemployment and Theme data
+  - Hip Hop profanity rise vs arrests / suspensions / behavioral problems
+  - Therapy vs joy fading fear Anger rising
