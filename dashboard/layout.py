@@ -56,6 +56,15 @@ SENTIMENTS = ("Positive", "Negative")
 DEFAULT_EMOTIONS = ("Positive", "Fear", "Joy", "Anger")
 HEADLINE_TOPIC = "Party & Celebration"
 UNEMPLOYMENT_INDICATOR = "Unemployment Rate"
+ECONOMY_INDICATORS = (UNEMPLOYMENT_INDICATOR, "Consumer Sentiment", "Birth Rate")
+CORRELATION_DECIMALS = 2
+MAX_CORRELATION = 1
+SIGNIFICANCE_LEVEL = 0.05
+SIGNIFICANCE_MARKER = "*"
+HEADLINE_CELL_HALF_WIDTH = 0.5
+HEADLINE_CELL_BORDER_WIDTH = 3
+HEADLINE_CELL_BORDER_COLOR = "#111827"
+ECONOMY_HEATMAP_HEIGHT = 380
 TOPIC_HEATMAP_DECIMALS = 0
 # Emotion shares differ by fractions of a point between genres
 EMOTION_HEATMAP_DECIMALS = 1
@@ -69,15 +78,18 @@ CHART_TITLE_FONT_FAMILY = "Barlow Condensed, Arial Narrow, sans-serif"
 CHART_TITLE_FONT_SIZE = 22
 CHART_TITLE_FONT_WEIGHT = 600
 
+# "author" is the in-text form; "reference_author" is the APA reference list form when they differ
 APPLE_ITUNES_SOURCE = {
     "author": "Apple Inc.",
     "date": "2026",
     "title": "iTunes Search API",
-    "details": "[Data set]. Retrieved October 16, 2026, from",
+    "details": "[Data set].",
+    "retrieved": "October 16, 2026",
     "url": "https://performance-partners.apple.com/search-api",
 }
 MELO_LYRICS_SOURCE = {
     "author": "Melo",
+    "reference_author": "Melo, T. de",
     "date": "2026",
     "title": "Billboard Year-End Hot 100 lyrics dataset (2000–2024)",
     "details": "[Data set]. GitHub.",
@@ -88,13 +100,16 @@ TYPESAFE_SOURCE = {
     "date": "2026",
     "title": "Jev",
     "details": "(Version 1.13.0) [Computer software].",
-    "url": None,
+    "retrieved": "October 14, 2026",
+    "url": "https://typesafe.ai/blog/introducing-system-one-models-and-jev",
 }
 NRC_EMOTION_SOURCE = {
     "author": "Mohammad & Turney",
+    "reference_author": "Mohammad, S. M., & Turney, P. D.",
     "date": "2013",
     "title": "Crowdsourcing a word–emotion association lexicon",
-    "details": "Computational Intelligence, 29(3), 436–465.",
+    "journal": "Computational Intelligence, 29",
+    "details": "(3), 436–465.",
     "url": "https://doi.org/10.1111/j.1467-8640.2012.00460.x",
 }
 BLS_UNEMPLOYMENT_SOURCE = {
@@ -102,10 +117,28 @@ BLS_UNEMPLOYMENT_SOURCE = {
     "date": "2026",
     "title": "Unemployment rate",
     "details": "[UNRATE] [Data set]. Federal Reserve Bank of St. Louis.",
+    "retrieved": "October 16, 2026",
     "url": "https://fred.stlouisfed.org/series/UNRATE",
+}
+UMICH_SENTIMENT_SOURCE = {
+    "author": "University of Michigan",
+    "date": "2026",
+    "title": "University of Michigan: Consumer sentiment",
+    "details": "[UMCSENT] [Data set]. Federal Reserve Bank of St. Louis.",
+    "retrieved": "October 16, 2026",
+    "url": "https://fred.stlouisfed.org/series/UMCSENT",
+}
+WORLD_BANK_BIRTH_RATE_SOURCE = {
+    "author": "World Bank",
+    "date": "2026",
+    "title": "Crude birth rate for the United States",
+    "details": "[SPDYNCBRTINUSA] [Data set]. Federal Reserve Bank of St. Louis.",
+    "retrieved": "October 19, 2026",
+    "url": "https://fred.stlouisfed.org/series/SPDYNCBRTINUSA",
 }
 JOSHI_SPOTIFY_SOURCE = {
     "author": "Joshi",
+    "reference_author": "Joshi, A.",
     "date": "2023",
     "title": "Spotify_1Million_Tracks",
     "details": "[Data set]. Kaggle.",
@@ -118,6 +151,26 @@ BILLBOARD_SOURCE = {
     "details": "[Data set].",
     "url": "https://www.billboard.com/charts/year-end/hot-100-songs/",
 }
+ZABERDEV_PROFANITY_SOURCE = {
+    "author": "zaberdev",
+    "date": "n.d.",
+    "title": "Profanity",
+    "details": "[Data set]. Kaggle.",
+    "retrieved": "October 16, 2026",
+    "url": "https://www.kaggle.com/datasets/zaberdev/profanity",
+}
+REFERENCE_SOURCES = (
+    APPLE_ITUNES_SOURCE,
+    MELO_LYRICS_SOURCE,
+    TYPESAFE_SOURCE,
+    NRC_EMOTION_SOURCE,
+    BLS_UNEMPLOYMENT_SOURCE,
+    UMICH_SENTIMENT_SOURCE,
+    WORLD_BANK_BIRTH_RATE_SOURCE,
+    JOSHI_SPOTIFY_SOURCE,
+    BILLBOARD_SOURCE,
+    ZABERDEV_PROFANITY_SOURCE,
+)
 
 
 def build_layout(
@@ -153,6 +206,7 @@ def build_layout(
             build_emotion_sheet(emotion_df, genre_emotion_share_df),
             build_sound_sheet(sound_df),
             build_economy_sheet(economy_df, topic_df),
+            build_references_sheet(),
         ],
         className="container",
     )
@@ -376,7 +430,7 @@ def build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df):
                 "Genres differ in what they sing about. Each cell compares a genre's share of songs "
                 "with a main topic against the average across all genres with that main topic. "
                 "The rise of Lifestyle & Success comes from hip-hop: it sits 26 points above the "
-                "average, and no other genre is more than 4 points above."
+                "average, and no other genre is more than 4 points above for that topic."
             ),
             dcc.Graph(figure=build_genre_topic_heatmap(genre_topic_share_df, topic_df)),
             build_chart_note(
@@ -472,7 +526,8 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
                 f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
-                f"{format_citation(TYPESAFE_SOURCE)}"
+                f"{format_citation(TYPESAFE_SOURCE)}; profanity list from "
+                f"{format_citation(ZABERDEV_PROFANITY_SOURCE)}"
             ),
         ],
         className="sheet",
@@ -864,9 +919,17 @@ def build_economy_sheet(economy_df, topic_df):
                     unemployment, party_share, party_color
                 )
             ),
+            html.P(
+                "Each cell is the correlation between an indicator and a topic's yearly share. "
+                "Unemployment and party songs is the strongest of all 30 pairs. Birth rate's links "
+                "come from its steady decline, not the topics. "
+            ),
+            dcc.Graph(figure=build_economy_correlation_heatmap(economy_df, topic_df)),
             build_chart_note(
                 f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}; "
-                f"unemployment from {format_citation(BLS_UNEMPLOYMENT_SOURCE)} via FRED"
+                f"unemployment from {format_citation(BLS_UNEMPLOYMENT_SOURCE)}, consumer sentiment "
+                f"from {format_citation(UMICH_SENTIMENT_SOURCE)} and birth rate from "
+                f"{format_citation(WORLD_BANK_BIRTH_RATE_SOURCE)} via FRED"
             ),
         ],
         className="sheet",
@@ -908,12 +971,111 @@ def build_unemployment_party_chart(unemployment, party_share, party_color):
     return figure
 
 
+def build_economy_correlation_heatmap(economy_df, topic_df):
+    topics = list(category_order(topic_df, "main_topic"))
+    topic_shares = (
+        yearly_shares(topic_df, "main_topic")
+        .pivot(index="year", columns="main_topic", values="entry_share")
+        .reindex(columns=topics)
+        .fillna(0)
+    )
+    indicators = economy_df.pivot(
+        index="year", columns="indicator", values="value"
+    ).loc[topic_shares.index, list(ECONOMY_INDICATORS)]
+    results = [
+        [stats.pearsonr(indicators[indicator], topic_shares[topic]) for topic in topics]
+        for indicator in ECONOMY_INDICATORS
+    ]
+    correlations = np.array([[result.statistic for result in row] for row in results])
+    p_values = np.array([[result.pvalue for result in row] for row in results])
+    labels = [
+        [
+            f"{correlation:+.{CORRELATION_DECIMALS}f}"
+            + (SIGNIFICANCE_MARKER if p_value < SIGNIFICANCE_LEVEL else "")
+            for correlation, p_value in zip(correlation_row, p_value_row)
+        ]
+        for correlation_row, p_value_row in zip(correlations, p_values)
+    ]
+    figure = go.Figure(
+        go.Heatmap(
+            z=correlations,
+            x=topics,
+            y=list(ECONOMY_INDICATORS),
+            customdata=p_values,
+            text=labels,
+            texttemplate="%{text}",
+            colorscale=HEATMAP_COLOR_SCALE,
+            zmid=0,
+            zmin=-MAX_CORRELATION,
+            zmax=MAX_CORRELATION,
+            colorbar={"title": {"text": "Correlation (r)"}},
+            hovertemplate="%{y} vs. %{x}<br>r = %{z:+.2f}, p = %{customdata:.3f}<extra></extra>",
+        )
+    )
+    headline_column = topics.index(HEADLINE_TOPIC)
+    headline_row = ECONOMY_INDICATORS.index(UNEMPLOYMENT_INDICATOR)
+    figure.add_shape(
+        type="rect",
+        x0=headline_column - HEADLINE_CELL_HALF_WIDTH,
+        x1=headline_column + HEADLINE_CELL_HALF_WIDTH,
+        y0=headline_row - HEADLINE_CELL_HALF_WIDTH,
+        y1=headline_row + HEADLINE_CELL_HALF_WIDTH,
+        line={"color": HEADLINE_CELL_BORDER_COLOR, "width": HEADLINE_CELL_BORDER_WIDTH},
+    )
+    figure.update_yaxes(autorange="reversed")
+    figure.update_xaxes(tickangle=-30)
+    figure.update_layout(
+        title=build_chart_title("Economic indicators vs. main topics"),
+        height=ECONOMY_HEATMAP_HEIGHT,
+        font_family=CHART_FONT_FAMILY,
+        plot_bgcolor="white",
+    )
+    return figure
+
+
 def standardize(series):
     return (series - series.mean()) / series.std()
 
 
 def format_citation(source):
     return f"{source['author']} ({source['date']})"
+
+
+def build_references_sheet():
+    sources = sorted(
+        REFERENCE_SOURCES, key=lambda source: reference_author(source).casefold()
+    )
+    return html.Section(
+        [
+            html.H2("References"),
+            *[
+                html.P(format_reference(source), className="reference")
+                for source in sources
+            ],
+        ],
+        className="sheet",
+    )
+
+
+def reference_author(source):
+    return source.get("reference_author", source["author"])
+
+
+def format_reference(source):
+    author = reference_author(source).removesuffix(".")
+    reference = [f"{author}. ({source['date']}). "]
+    if "journal" in source:
+        reference += [
+            f"{source['title']}. ",
+            html.Em(source["journal"]),
+            f"{source['details']} ",
+        ]
+    else:
+        reference += [html.Em(source["title"]), f" {source['details']} "]
+    if "retrieved" in source:
+        reference.append(f"Retrieved {source['retrieved']}, from ")
+    reference += [html.A(source["url"], href=source["url"])]
+    return reference
 
 
 def build_chart_note(citations):

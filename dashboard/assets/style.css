@@ -116,6 +116,13 @@ h2 {
   margin: 0;
 }
 
+/* APA hanging indent */
+.reference {
+  padding-left: 2em;
+  text-indent: -2em;
+  overflow-wrap: anywhere;
+}
+
 .chart-note {
   font-size: 0.85rem;
   color: var(--muted);
