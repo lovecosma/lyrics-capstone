@@ -18,7 +18,7 @@ from data import (
 
 HOST = "127.0.0.1"
 PORT = 8050
-DEBUG = True
+DEBUG = False
 
 os.chdir(os.path.dirname(__file__))
 

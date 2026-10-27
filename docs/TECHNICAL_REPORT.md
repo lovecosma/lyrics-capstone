@@ -47,46 +47,46 @@ pytest specs cover the transformers, lyrics analyzers and genre enrichers.
 
 Country/Folk and Hip-Hop/Rap grew while R&B/Soul and Rock/Alternative faded.
 
-![Share of chart entries by genre](screenshots/share-of-chart-entries-by-genre-20002024.png)
+![Share of chart entries by genre](../assets/screenshots/share-of-chart-entries-by-genre-20002024.png)
 
 ### Topic
 
 Lifestyle & Success more than doubled, driven by hip-hop. Heartbreak overtook Love as the top topic in 2024.
 
-![Main topic vs. topic mentioned by year](screenshots/main-topic-vs-topic-mentioned-by-year.png)
-![Main topics by genre vs. average](screenshots/main-topics-by-genre-vs-average.png)
+![Main topic vs. topic mentioned by year](../assets/screenshots/main-topic-vs-topic-mentioned-by-year.png)
+![Main topics by genre vs. average](../assets/screenshots/main-topics-by-genre-vs-average.png)
 
 ### Vocabulary
 
 "Girl", "love" and "club" faded while rap slang and strong profanity rose. Each genre has its own distinctive words.
 
-![Biggest changes in word use](screenshots/biggest-changes-in-word-use-in-all-genre.png)
-![Most distinctive words: R&B/Soul](screenshots/most-distinctive-words-rbsoul.png)
+![Biggest changes in word use](../assets/screenshots/biggest-changes-in-word-use-in-all-genre.png)
+![Most distinctive words: R&B/Soul](../assets/screenshots/most-distinctive-words-rbsoul.png)
 
 ### Explicit
 
 Explicit words nearly doubled, and the rise spread across all genres.
 
-![Explicit words per 1,000 lyric words](screenshots/explicit-words-per-1000-lyric-words-2000.png)
-![Songs with explicit words by genre](screenshots/songs-with-explicit-words-by-genre.png)
+![Explicit words per 1,000 lyric words](../assets/screenshots/explicit-words-per-1000-lyric-words-2000.png)
+![Songs with explicit words by genre](../assets/screenshots/songs-with-explicit-words-by-genre.png)
 
 ### Emotion
 
 Fear and anger words rose while joy and positive words fell.
 
-![Change in emotion word share](screenshots/change-in-emotion-word-share-since-20002.png)
-![Emotions by genre vs. average](screenshots/emotions-by-genre-vs-average.png)
+![Change in emotion word share](../assets/screenshots/change-in-emotion-word-share-since-20002.png)
+![Emotions by genre vs. average](../assets/screenshots/emotions-by-genre-vs-average.png)
 
 ### Sound
 
 Hits got 15% shorter and sound sadder and calmer.
 
-![Average song length](screenshots/average-song-length-20002022.png)
-![Change in Spotify audio features](screenshots/change-in-spotify-audio-features-vs-2000.png)
+![Average song length](../assets/screenshots/average-song-length-20002022.png)
+![Change in Spotify audio features](../assets/screenshots/change-in-spotify-audio-features-vs-2000.png)
 
 ### Economy
 
 Party songs track unemployment (r = +0.67), the strongest of 30 indicator–topic pairs.
 
-![Party songs vs. unemployment](screenshots/party-songs-vs-unemployment.png)
-![Economic indicators vs. main topics](screenshots/economic-indicators-vs-main-topics.png)
+![Party songs vs. unemployment](../assets/screenshots/party-songs-vs-unemployment.png)
+![Economic indicators vs. main topics](../assets/screenshots/economic-indicators-vs-main-topics.png)

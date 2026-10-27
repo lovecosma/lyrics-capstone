@@ -57,7 +57,7 @@
 
 ## Schema Design
 
-![Schema design](schema-plan.png)
+![Schema design](../assets/schema-plan.png)
 
 ## ETL
 
@@ -133,7 +133,7 @@
 
 ## Architecture
 
-![Architecture diagram](Infra.png)
+![Architecture diagram](../assets/Infra.png)
 
 | Layer | Technology |
 |---|---|
