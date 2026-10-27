@@ -106,8 +106,9 @@ pytest
 
 ## Docs
 
+- [TECHNICAL_REPORT.md](TECHNICAL_REPORT.md): high-level summary of the project
 - [ETL_DOCS.md](ETL_DOCS.md): every pipeline step and class
 - [dashboard/DASH_DOCS.md](dashboard/DASH_DOCS.md): the Dash app, views and repositories
 - [PLANNING.md](PLANNING.md): hypotheses and original plan
-- [PRESENTATION_PLANNING.md](PRESENTATION_PLANNING.md): working questions, datasets with citations and project time tracking
+- [PRESENTATION_PLANNING.md](PRESENTATION_PLANNING.md): working questions, datasets with citations and project time tracking.
 - [JOURNAL.md](JOURNAL.md): development journal
