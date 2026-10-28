@@ -228,4 +228,6 @@ data/*
 planning/
 .env
 TRENDS.md
-CHART_PLANNING.mdsecrets/
+CHART_PLANNING.md
+secrets/
+logs/
