@@ -45,6 +45,8 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 gcloud iam service-accounts create dashboard-builder
 gcloud projects add-iam-policy-binding <project> \
   --member=serviceAccount:dashboard-builder@<project>.iam.gserviceaccount.com --role=roles/run.builder
+# Runtime identity for the service. Gets no roles: the dashboard calls no Google APIs
+gcloud iam service-accounts create dashboard-runtime
 ```
 ### Deploy
 ```bash
@@ -53,6 +55,7 @@ python dashboard/snapshot.py   # only if the snapshot is older than the last DAG
 ```
 - `gcloud run deploy --source` builds the image with Cloud Build, pushes it to Artifact Registry and deploys a new revision
 - deploy.sh stops if there's no snapshot to ship
+- The service runs as `dashboard-runtime`, which has no roles, instead of the default compute account, which usually has Editor on the project. Whoever runs deploy.sh needs `roles/iam.serviceAccountUser` on it (project owners already have it)
 - `.gcloudignore` keeps `.env` and caches out of the upload
 - Concurrency matches the gunicorn thread count. gunicorn only listens once the data is loaded, so Cloud Run's default startup probe waits for it
 

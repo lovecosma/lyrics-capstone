@@ -18,8 +18,8 @@ fi
 SERVICE=dashboard
 PROJECT="${CLOUD_SQL_INSTANCE%%:*}"
 REGION="$(cut -d: -f2 <<< "$CLOUD_SQL_INSTANCE")"
-# Build-only service account, so the running service keeps the default account with no roles
-BUILD_SERVICE_ACCOUNT="projects/$PROJECT/serviceAccounts/dashboard-builder@$PROJECT.iam.gserviceaccount.com"
+SERVICE_ACCOUNT_DOMAIN="$PROJECT.iam.gserviceaccount.com"
+BUILD_SERVICE_ACCOUNT="projects/$PROJECT/serviceAccounts/dashboard-builder@$SERVICE_ACCOUNT_DOMAIN"
 MEMORY=512Mi
 CPU=1
 MIN_INSTANCES=0
@@ -31,6 +31,7 @@ gcloud run deploy "$SERVICE" \
   --project "$PROJECT" \
   --source "$DASHBOARD_DIR" \
   --build-service-account "$BUILD_SERVICE_ACCOUNT" \
+  --service-account "$RUNTIME_SERVICE_ACCOUNT" \
   --region "$REGION" \
   --memory "$MEMORY" \
   --cpu "$CPU" \
