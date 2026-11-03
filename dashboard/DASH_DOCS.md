@@ -1,18 +1,64 @@
 # Dashboard Documentation
 
 ## App (app.py)
-- Inputs: DB_ENGINE_URL from .env 
+- Inputs: the Parquet snapshot in dashboard/snapshot/, written by snapshot.py
 - Purpose: 
-  - Start the Dash app: load every sheet's data from the repositories, build the layout and serve it
+  - Start the Dash app: read every sheet's data from the snapshot, build the layout and serve it
 - Interesting Parts: 
-  - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
+  - The app never connects to the database, so the deployed container holds no credentials
   - Genre and topic colors are worked out once from the genre and topic counts and passed to both the layout and the callbacks, so a genre or topic is the same color on every sheet
-  - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart without querying the database
-  - Changes into the dashboard folder on startup, so Dynaconf finds .env
+  - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart from memory
+  - create_app builds the app at import time, and the module exposes `server` so gunicorn can serve `app:server`. `python app.py` still runs the Dash dev server
+- Running in a container:
+  - dashboard/Dockerfile copies the snapshot into the image and serves the app with gunicorn on $PORT (default 8050), using one worker and `--preload`, since every worker holds all the data in memory
 - Key Tech:
   - Dash
+  - gunicorn
+
+## Snapshot (snapshot.py)
+- Inputs: DB_ENGINE_URL from .env
+- Purpose: 
+  - Export every dataset the dashboard needs to dashboard/snapshot/, one Parquet file each: `python dashboard/snapshot.py`
+  - Run it after each pipeline run, before starting or deploying the dashboard
+- Interesting Parts: 
+  - load_from_database runs the repositories in data.py and keys each result by its build_layout argument name, so read_snapshot hands app.py the same dict back
+  - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
+  - shared_words is a list, so it's saved as a one-column table and turned back into a list on read
+  - read_snapshot fails with a clear message if the snapshot is missing
+  - The snapshot folder is git-ignored but uploaded by deploy.sh, since .gcloudignore replaces .gitignore for uploads
+- Key Tech:
   - SQLAlchemy
   - Dynaconf
+  - pandas / pyarrow (Parquet)
+- Outputs: 
+  - dashboard/snapshot/<dataset>.parquet
+
+## Deploying to Cloud Run
+- Public Cloud Run service `dashboard`. It scales to zero when idle, so the first visit after a quiet period waits for the app to load the snapshot
+- The image carries its own data, so the service needs no database connection, secrets or extra IAM roles. Cloud SQL can be stopped between pipeline runs
+
+### One-time setup
+```bash
+gcloud auth login
+gcloud config set project <project>
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+
+# Build-only service account for Cloud Build (the running service keeps the default account, with no roles)
+gcloud iam service-accounts create dashboard-builder
+gcloud projects add-iam-policy-binding <project> \
+  --member=serviceAccount:dashboard-builder@<project>.iam.gserviceaccount.com --role=roles/run.builder
+```
+Also set a small monthly budget with email alerts in Billing, since the URL is public. `--max-instances` in deploy.sh caps how far it can scale.
+
+### Deploy
+```bash
+python dashboard/snapshot.py   # after each pipeline run
+./dashboard/deploy.sh
+```
+- `gcloud run deploy --source` builds the image with Cloud Build, pushes it to Artifact Registry and deploys a new revision
+- deploy.sh stops if there's no snapshot to ship
+- `.gcloudignore` keeps `.env` and caches out of the upload
+- Concurrency matches the gunicorn thread count. gunicorn only listens once the data is loaded, so Cloud Run's default startup probe waits for it
 
 ## Callbacks (callbacks.py)
 - Inputs: genre and topic distinctive terms, genre and topic colors, and word year counts, passed in by app.py through set_data

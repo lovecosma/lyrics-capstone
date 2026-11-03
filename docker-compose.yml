@@ -57,5 +57,13 @@ services:
       - ./services:/opt/airflow/services
       - ./sql:/opt/airflow/sql
 
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    hostname: dashboard
+    restart: always
+    ports:
+      - 127.0.0.1:8050:8050
+
 volumes:
   pgdata:

@@ -25,9 +25,11 @@ The dashboard has eight sheets: Genre, Topic, Vocabulary, Explicit, Emotion, Sou
 | `main.py` | Runs the same pipeline steps locally without Airflow |
 | `sql/lyrics-schema.sql` | Tables for the `billboard_lyrics` schema |
 | `sql/lyrics-views.sql` | Views the dashboard queries |
-| `dashboard/` | Dash app: `app.py` (entry point), `data.py` (repositories), `layout.py` (sheets and charts), `callbacks.py` (picker callbacks), `assets/style.css` |
+| `dashboard/` | Dash app: `app.py` (entry point), `snapshot.py` (exports the data to Parquet), `data.py` (repositories), `layout.py` (sheets and charts), `callbacks.py` (picker callbacks), `assets/style.css` |
 | `airflow/Dockerfile` | Airflow image with the pipeline's extra packages |
-| `docker-compose.yml` | Postgres, Cloud SQL Auth Proxy and Airflow containers |
+| `docker-compose.yml` | Postgres, Cloud SQL Auth Proxy, Airflow and dashboard containers |
+| `dashboard/Dockerfile` | Dashboard image, served with gunicorn |
+| `dashboard/deploy.sh` | Deploys the dashboard to Cloud Run |
 | `tests/` | pytest specs for the transformers, analyzers and enrichers |
 | `data/` | Source datasets and API snapshots (mostly git-ignored, see below) |
 | `docs/` | Technical report, ETL docs, planning docs and the development journal |
@@ -84,12 +86,36 @@ python main.py
 
 ### 4. Run the dashboard
 
+The dashboard reads a Parquet snapshot of the database, so export one after each pipeline run (needs the database reachable through `DB_ENGINE_URL`):
+
 ```bash
 pip install -r dashboard/requirements.txt
+python dashboard/snapshot.py
+```
+
+Then run it in a container:
+
+```bash
+docker compose up -d --build dashboard
+```
+
+Or locally:
+
+```bash
 python dashboard/app.py
 ```
 
 Open http://127.0.0.1:8050.
+
+### 5. Deploy the dashboard to Cloud Run
+
+After the one-time setup in [dashboard/DASH_DOCS.md](dashboard/DASH_DOCS.md#deploying-to-cloud-run), export a fresh snapshot and run:
+
+```bash
+./dashboard/deploy.sh
+```
+
+The deployed dashboard doesn't connect to the database, so Cloud SQL can be stopped between pipeline runs.
 
 ### Ports
 
@@ -114,3 +140,4 @@ pytest
 - [PLANNING.md](docs/PLANNING.md): hypotheses and original plan
 - [PRESENTATION_PLANNING.md](docs/PRESENTATION_PLANNING.md): working questions, datasets with citations and project time tracking.
 - [JOURNAL.md](docs/JOURNAL.md): development journal
+
