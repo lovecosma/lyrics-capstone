@@ -9,8 +9,8 @@ The dashboard has eight sheets: Genre, Topic, Vocabulary, Explicit, Emotion, Sou
 1. **Extract:** CSVs (Billboard lyrics, Spotify tracks, NRC Emotion Lexicon, profanity list, FRED economic series) and two APIs (iTunes Search for genres and explicit flags, TypeSafe's Jev model for lyrical topics).
 2. **Transform:** pandas cleans and merges tracks, tokenizes lyrics, scores lyric metrics and n-grams, and maps iTunes genres to broad genres.
 3. **Load:** everything lands in the `billboard_lyrics` Postgres schema. SQL views shape it for the dashboard.
-4. **Orchestrate:** one Airflow DAG runs the whole pipeline. API results are saved to snapshot CSVs
-5. **Visualize:** the Dash app reads the views through repository classes and builds the sheets.
+4. **Orchestrate:** an Airflow DAG runs the pipeline. API results are saved to snapshot CSVs
+5. **Visualize:** the Dash app reads the data and builds the layout.
 
 ![ETL diagram](assets/Dark%20Mode%20ETL.png)
 
@@ -25,10 +25,10 @@ The dashboard has eight sheets: Genre, Topic, Vocabulary, Explicit, Emotion, Sou
 | `main.py` | Runs the same pipeline steps locally without Airflow |
 | `sql/lyrics-schema.sql` | Tables for the `billboard_lyrics` schema |
 | `sql/lyrics-views.sql` | Views the dashboard queries |
-| `dashboard/` | Dash app: `app.py` (entry point), `snapshot.py` (exports the data to Parquet), `data.py` (repositories), `layout.py` (sheets and charts), `callbacks.py` (picker callbacks), `assets/style.css` |
+| `dashboard/` | Dash app: `app.py` (entry point), `snapshot.py` (exports the data to Parquet), `data.py` (repositories), `layout.py` (sheets and charts), `callbacks.py`, `assets/style.css` |
 | `airflow/Dockerfile` | Airflow image with the pipeline's extra packages |
-| `docker-compose.yml` | Postgres, Cloud SQL Auth Proxy, Airflow and dashboard containers |
-| `dashboard/Dockerfile` | Dashboard image, served with gunicorn |
+| `docker-compose.yml` | Postgres, Cloud SQL Auth Proxy (for local airflow GCP authentication), Airflow and dashboard containers |
+| `dashboard/Dockerfile` | Dashboard image |
 | `dashboard/deploy.sh` | Deploys the dashboard to Cloud Run |
 | `tests/` | pytest specs for the transformers, analyzers and enrichers |
 | `data/` | Source datasets and API snapshots (mostly git-ignored, see below) |
@@ -65,7 +65,7 @@ AIRFLOW_UID=...
 TYPESAFE_AI_API_KEY=...
 ```
 
-The Cloud SQL proxy uses your gcloud application default credentials (`gcloud auth application-default login`).
+The Cloud SQL proxy uses your gcloud application default credentials. With the [gcloud CLI](https://cloud.google.com/sdk/docs/install) installed, run `gcloud auth application-default login` once for credentials.
 
 ### 3. Run the pipeline
 
@@ -86,7 +86,7 @@ python main.py
 
 ### 4. Run the dashboard
 
-The dashboard reads a Parquet snapshot of the database, so export one after each pipeline run (needs the database reachable through `DB_ENGINE_URL`):
+The dashboard reads a Parquet snapshot of the database in `dashboard/snapshot/`. The DAG's last task writes it. After running the pipeline without Airflow, export it by hand using `DB_ENGINE_URL`.
 
 ```bash
 pip install -r dashboard/requirements.txt
@@ -109,14 +109,11 @@ Open http://127.0.0.1:8050.
 
 ### 5. Deploy the dashboard to Cloud Run
 
-After the one-time setup in [dashboard/DASH_DOCS.md](dashboard/DASH_DOCS.md#deploying-to-cloud-run), export a fresh snapshot and run:
+After the one-time setup in [dashboard/DASH_DOCS.md](dashboard/DASH_DOCS.md#deploying-to-cloud-run) and a pipeline run, run:
 
 ```bash
 ./dashboard/deploy.sh
 ```
-
-The deployed dashboard doesn't connect to the database, so Cloud SQL can be stopped between pipeline runs.
-
 ### Ports
 
 | Service | Port |

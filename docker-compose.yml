@@ -42,7 +42,8 @@ services:
     depends_on:
       - cloudsql-proxy
     environment:
-      PYTHONPATH: /opt/airflow
+      # dashboard/ holds snapshot.py and the repositories it imports
+      PYTHONPATH: /opt/airflow:/opt/airflow/dashboard
       AIRFLOW_VAR_TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY}
       AIRFLOW_CONN_BILLBOARD_POSTGRES: >-
         {"conn_type": "postgres", "host": "cloudsql-proxy", "port": 5432,
@@ -56,6 +57,7 @@ services:
       - ./data:/opt/airflow/data
       - ./services:/opt/airflow/services
       - ./sql:/opt/airflow/sql
+      - ./dashboard:/opt/airflow/dashboard
 
   dashboard:
     build: ./dashboard

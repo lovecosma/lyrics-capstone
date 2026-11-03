@@ -1,13 +1,13 @@
 """Exports the dashboard's data to Parquet files, so the app can run without a database.
 
-Run after each pipeline run, before deploying: python dashboard/snapshot.py
+The DAG's export_dashboard_snapshot task runs this after every pipeline run.
+To export by hand: python dashboard/snapshot.py
 """
 
 from pathlib import Path
 
 import pandas as pd
 from dynaconf import Dynaconf
-from layout import main_topics
 from sqlalchemy import create_engine
 
 from data import (
@@ -18,6 +18,7 @@ from data import (
     SoundRepository,
     TopicRepository,
     VocabularyRepository,
+    main_topics,
 )
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshot"

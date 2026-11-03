@@ -13,6 +13,7 @@ from data import (
     TOPIC_PRESENCE_THRESHOLD,
     VOCABULARY_GENRES,
     WORDS_PER_RATE,
+    main_topics,
 )
 
 SHARE_CHART_HEIGHT = 520
@@ -30,7 +31,6 @@ RISE_COLOR = "#15803d"
 FALL_COLOR = "#b91c1c"
 ALL_GENRES_LABEL = "All genres"
 ALL_SONGS_LABEL = "All songs"
-MAIN_TOPIC_COUNT = 7
 SONG_LENGTH_LABEL = "Song length (minutes)"
 SONG_LENGTH_AXIS_PADDING_MINUTES = 0.25
 SOUND_FLAT_CHANGE_PERCENT = 5
@@ -644,15 +644,6 @@ def build_explicit_breakdown_table(
     return html.Div(
         html.Table([html.Caption(title), html.Thead(header), html.Tbody(rows)]),
         className="table-scroll",
-    )
-
-
-def main_topics(year_df):
-    return list(
-        year_df.groupby("main_topic")["entry_count"]
-        .sum()
-        .nlargest(MAIN_TOPIC_COUNT)
-        .index
     )
 
 

@@ -6,6 +6,7 @@ Runs in this order:
   2. etl: load tracks, topics, the emotion lexicon, profanity words and economic indicators, one after another, each in its own transaction
   3. lyrics_analysis: lyric metrics, then lyrics topics (snapshot, then live TypeSafe, then export the snapshot)
   4. genre_enrichment: iTunes genres (snapshot, then live iTunes search, then export the snapshot), then map genres to broad genres
+  5. export_dashboard_snapshot: write the dashboard's data to dashboard/snapshot/ (see dashboard/DASH_DOCS.md), ready for deploy.sh
 - API results are restored from a CSV first, the live step only processes tracks the snapshot didn't cover, and the export adds new results back to the CSV
 - Retrying a failed task is safe
 - Each task opens its own engine from the billboard_postgres connection and disposes of it when done
