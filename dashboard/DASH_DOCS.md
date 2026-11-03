@@ -1,18 +1,64 @@
 # Dashboard Documentation
 
 ## App (app.py)
-- Inputs: DB_ENGINE_URL from .env 
+- Inputs: the Parquet snapshot in dashboard/snapshot/, written by snapshot.py
 - Purpose: 
-  - Start the Dash app: load every sheet's data from the repositories, build the layout and serve it
+  - Start the Dash app: read every sheet's data from the snapshot, build the layout and serve it
 - Interesting Parts: 
-  - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
   - Genre and topic colors are worked out once from the genre and topic counts and passed to both the layout and the callbacks, so a genre or topic is the same color on every sheet
-  - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart without querying the database
-  - Changes into the dashboard folder on startup, so Dynaconf finds .env
+  - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart from memory
+  - create_app builds the app at import time, and the module exposes `server` so gunicorn can serve `app:server`. `python app.py` still runs the Dash dev server
+- Running in a container:
+  - dashboard/Dockerfile copies the snapshot into the image and serves the app with gunicorn on $PORT (default 8050), using one worker, since every worker would hold its own copy of the data. `--preload` loads the data before gunicorn opens the port
 - Key Tech:
   - Dash
+  - gunicorn
+
+## Snapshot (snapshot.py)
+- Inputs: DB_ENGINE_URL from .env
+- Purpose: 
+  - Export every dataset the dashboard needs to dashboard/snapshot/, one Parquet file each
+  - The DAG's last task, export_dashboard_snapshot, runs it after every pipeline run. `python dashboard/snapshot.py` does the same by hand
+- Interesting Parts: 
+  - load_from_database runs the repositories in data.py and keys each result by its build_layout argument name, so read_snapshot hands app.py the same dict back
+  - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
+  -  Airflow mounts dashboard/ and adds it to PYTHONPATH
+  - shared_words is a list, so it's saved as a one-column table and turned back into a list on read
+  - write_snapshot writes into snapshot.staging/ and only swaps it into place once every file is written, so a failed export leaves the previous snapshot untouched
+  - Both sides check the dataset names against SNAPSHOT_NAMES: write_snapshot refuses a mismatched set, and read_snapshot names any missing file and ignores stray ones
+- Key Tech:
   - SQLAlchemy
   - Dynaconf
+  - pandas / pyarrow (Parquet)
+- Outputs: 
+  - dashboard/snapshot/<dataset>.parquet
+
+## Deploying to Cloud Run
+- Public Cloud Run service `dashboard`, live at https://dashboard-944640180596.us-east1.run.app/
+- Cloud SQL can be stopped between pipeline runs
+
+### One-time setup w/ gcloud auth
+
+```bash
+gcloud auth login
+gcloud config set project <project>
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
+gcloud iam service-accounts create dashboard-builder
+gcloud projects add-iam-policy-binding <project> \
+  --member=serviceAccount:dashboard-builder@<project>.iam.gserviceaccount.com --role=roles/run.builder
+# Runtime identity for the service. Gets no roles: the dashboard calls no Google APIs
+gcloud iam service-accounts create dashboard-runtime
+```
+### Deploy
+```bash
+python dashboard/snapshot.py   # only if the snapshot is older than the last DAG run
+./dashboard/deploy.sh
+```
+- `gcloud run deploy --source` builds the image with Cloud Build, pushes it to Artifact Registry and deploys a new revision
+- deploy.sh stops if there's no snapshot to ship
+- The service runs as `dashboard-runtime`, which has no roles, instead of the shared default compute account, so roles granted to that account later never reach the public service. Whoever runs deploy.sh needs `roles/iam.serviceAccountUser` on it (project owners already have it)
+- `.gcloudignore` keeps `.env` and caches out of the upload
+- Concurrency matches the gunicorn thread count. gunicorn only listens once the data is loaded, so Cloud Run's default startup probe waits for it
 
 ## Callbacks (callbacks.py)
 - Inputs: genre and topic distinctive terms, genre and topic colors, and word year counts, passed in by app.py through set_data
@@ -50,7 +96,7 @@
     - change_class marks a change in the tables as up or down when it's past a "flat" threshold, and muted otherwise (colors are in style.css)
     - build_chart_title and the chart font constants give every chart the same title style
     - build_chart_note and the *_SOURCE dicts add the source note under each sheet
-  - main_topics picks the 7 topics with the most entries (MAIN_TOPIC_COUNT); app.py also uses it to choose which topics to score for distinctive terms
+  - main_topics (in data.py) picks the 7 topics with the most entries (MAIN_TOPIC_COUNT); snapshot.py also uses it to choose which topics to score for distinctive terms
   - build_genre_share_heatmap draws both genre heatmaps (topics and emotions): each cell is a genre's share minus the all-genre average, with the color scale set by the five vocabulary genres so the small genres don't wash it out
   - The Economy chart standardizes both lines (z-scores), so unemployment and party share can be compared on one axis
   - Each sheet's write-up quotes specific numbers (e.g. "+13.0 points").

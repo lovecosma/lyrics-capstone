@@ -24,6 +24,16 @@ SHARED_WORD_RANK = 12
 PROFANITY_TERM = "[strong profanity]"
 # Words used in fewer chart entries than this across all years are too rare to track over time
 MIN_WORD_ENTRY_COUNT = 100
+MAIN_TOPIC_COUNT = 7
+
+
+def main_topics(year_df):
+    return list(
+        year_df.groupby("main_topic")["entry_count"]
+        .sum()
+        .nlargest(MAIN_TOPIC_COUNT)
+        .index
+    )
 
 
 class GenreRepository:

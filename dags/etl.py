@@ -8,6 +8,7 @@ from airflow.sdk import Variable, dag, task, task_group
 from typesafe_sdk import AsyncTypeSafeClient
 
 from services.batching import run_in_batches
+from snapshot import SNAPSHOT_DIR, load_from_database, write_snapshot
 from services.etl import (
     TOPIC_TABLE,
     BillboardExtractor,
@@ -268,12 +269,21 @@ def etl_dag():
             >> map_genres()
         )
 
+    @task()
+    def export_dashboard_snapshot():
+        engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
+        try:
+            write_snapshot(load_from_database(engine), SNAPSHOT_DIR)
+        finally:
+            engine.dispose()
+
     (
         schema_sql
         >> views_sql
         >> etl()
         >> lyrics_analysis()
         >> genre_enrichment()
+        >> export_dashboard_snapshot()
     )
 
 

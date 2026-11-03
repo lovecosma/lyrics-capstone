@@ -1,0 +1,9 @@
+# Files gcloud run deploy --source doesn't upload to Cloud Build
+.gcloudignore
+__pycache__/
+*.py[cod]
+.env
+DASH_DOCS.md
+deploy.sh
+snapshot.staging/
+snapshot.previous/

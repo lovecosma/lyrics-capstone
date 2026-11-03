@@ -1,17 +1,4 @@
 services:
-  db:
-    image: postgres:18
-    container_name: pg
-    hostname: postgres
-    restart: always
-    environment:
-      POSTGRES_USER: ${DB_USER}
-      POSTGRES_PASSWORD: ${DB_PASSWORD}
-      POSTGRES_DB: ${DB_DATABASE}
-    ports:
-      - 127.0.0.1:5434:5432
-    volumes:
-      - pgdata:/var/lib/postgresql
   cloudsql-proxy:
     image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.1
     container_name: cloudsql-proxy
@@ -42,20 +29,35 @@ services:
     depends_on:
       - cloudsql-proxy
     environment:
-      PYTHONPATH: /opt/airflow
+      # dashboard/ holds snapshot.py and the repositories it imports
+      PYTHONPATH: /opt/airflow:/opt/airflow/dashboard
       AIRFLOW_VAR_TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY}
       AIRFLOW_CONN_BILLBOARD_POSTGRES: >-
         {"conn_type": "postgres", "host": "cloudsql-proxy", "port": 5432,
         "login": "${DB_USER}", "password": "${DB_PASSWORD}",
         "schema": "${DB_DATABASE}"}
     ports:
-      - 8080:8080                
+      - 127.0.0.1:8080:8080
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs 
       - ./data:/opt/airflow/data
       - ./services:/opt/airflow/services
       - ./sql:/opt/airflow/sql
+      - ./dashboard:/opt/airflow/dashboard
 
-volumes:
-  pgdata:
+  dashboard:
+    build: ./dashboard
+    container_name: dashboard
+    hostname: dashboard
+    ports:
+      - 127.0.0.1:8050:8050
+    volumes:
+      # Serves the latest snapshot without a rebuild. The app loads it at startup,
+      # so restart the container after a new export
+      - type: bind
+        source: ./dashboard/snapshot
+        target: /app/snapshot
+        read_only: true
+        bind:
+          create_host_path: false

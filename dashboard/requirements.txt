@@ -1,7 +1,11 @@
-dash
-pandas
-SQLAlchemy
-psycopg[binary]
-Dynaconf
-numpy
-scipy
+dash==4.4.1
+plotly==7.1.0
+# pandas, numpy and pyarrow match airflow/Dockerfile: the DAG writes the snapshot this app reads
+pandas==3.0.6
+numpy==2.5.4
+scipy==1.18.1
+SQLAlchemy==2.1.4
+psycopg[binary]==3.3.6
+Dynaconf==3.3.5
+pyarrow==26.0.1
+gunicorn==23.0.0
