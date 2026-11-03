@@ -34,7 +34,7 @@
   - dashboard/snapshot/<dataset>.parquet
 
 ## Deploying to Cloud Run
-- Public Cloud Run service `dashboard`.
+- Public Cloud Run service `dashboard`, live at https://dashboard-944640180596.us-east1.run.app/
 - Cloud SQL can be stopped between pipeline runs
 
 ### One-time setup w/ gcloud auth
