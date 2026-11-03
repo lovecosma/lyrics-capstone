@@ -9,6 +9,13 @@ SNAPSHOT_DIR="$DASHBOARD_DIR/snapshot"
 # Read only the one setting deploy needs, so .env secrets never reach gcloud's environment
 CLOUD_SQL_INSTANCE="$(source "$REPO_ROOT/.env" && echo "$CLOUD_SQL_INSTANCE")"
 
+# Ship only committed code: deploy uploads the working tree, so stray edits would go live unseen.
+# The snapshot is git-ignored, so it doesn't count
+if [[ -n "$(git -C "$REPO_ROOT" status --porcelain -- "$DASHBOARD_DIR")" ]]; then
+  echo "dashboard/ has uncommitted changes. Commit or stash them before deploying." >&2
+  exit 1
+fi
+
 if ! compgen -G "$SNAPSHOT_DIR/*.parquet" > /dev/null; then
   echo "No snapshot in $SNAPSHOT_DIR. Run python dashboard/snapshot.py first." >&2
   exit 1
