@@ -1,0 +1,7 @@
+dash
+pandas
+SQLAlchemy
+psycopg[binary]
+Dynaconf
+numpy
+scipy

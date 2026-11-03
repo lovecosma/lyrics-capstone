@@ -1,0 +1,10 @@
+pandas
+nltk
+lexicalrichness
+requests
+typesafe-sdk
+python-dotenv
+psycopg[binary]
+SQLAlchemy
+Dynaconf
+pytest

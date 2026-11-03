@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:18
+    container_name: pg
+    hostname: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_DATABASE}
+    ports:
+      - 127.0.0.1:5434:5432
+    volumes:
+      - pgdata:/var/lib/postgresql
+  cloudsql-proxy:
+    image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.14.1
+    container_name: cloudsql-proxy
+    hostname: cloudsql-proxy
+    restart: always
+    user: "${AIRFLOW_UID}"
+    command:
+      - --address=0.0.0.0
+      - --port=5432
+      - ${CLOUD_SQL_INSTANCE}
+    environment:
+      GOOGLE_APPLICATION_CREDENTIALS: /secrets/adc.json
+    ports:
+      - 127.0.0.1:5435:5432
+    volumes:
+      - type: bind
+        source: ${HOME}/.config/gcloud/application_default_credentials.json
+        target: /secrets/adc.json
+        read_only: true
+        bind:
+          create_host_path: false
+  airflow:                     
+    build: ./airflow
+    container_name: airflow      
+    hostname: airflow           
+    user: "${AIRFLOW_UID:-50000}:0"
+    command: airflow standalone
+    depends_on:
+      - cloudsql-proxy
+    environment:
+      PYTHONPATH: /opt/airflow
+      AIRFLOW_VAR_TYPESAFE_AI_API_KEY: ${TYPESAFE_AI_API_KEY}
+      AIRFLOW_CONN_BILLBOARD_POSTGRES: >-
+        {"conn_type": "postgres", "host": "cloudsql-proxy", "port": 5432,
+        "login": "${DB_USER}", "password": "${DB_PASSWORD}",
+        "schema": "${DB_DATABASE}"}
+    ports:
+      - 8080:8080                
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs 
+      - ./data:/opt/airflow/data
+      - ./services:/opt/airflow/services
+      - ./sql:/opt/airflow/sql
+
+volumes:
+  pgdata:

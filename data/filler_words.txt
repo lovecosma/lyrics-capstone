@@ -1,0 +1,25 @@
+# Sung vocables and interjections that carry no lyrical meaning
+# One word per line; lines starting with # are ignored
+ah
+ay
+ayy
+ba
+bah
+da
+dee
+di
+hey
+hmm
+huh
+la
+mm
+mmm
+na
+oh
+ooh
+uh
+whoa
+woah
+ye
+yeah
+yo

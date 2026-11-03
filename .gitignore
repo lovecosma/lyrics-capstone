@@ -218,3 +218,16 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.venv/
+data/*
+!data/stopwords.txt
+!data/filler_words.txt
+!data/lyric_stopwords.txt
+!data/topics.csv
+!data/genre_mapping.csv
+planning/
+.env
+TRENDS.md
+CHART_PLANNING.md
+secrets/
+logs/
