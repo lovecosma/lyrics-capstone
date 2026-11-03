@@ -232,3 +232,5 @@ CHART_PLANNING.md
 secrets/
 logs/
 dashboard/snapshot/
+dashboard/snapshot.staging/
+dashboard/snapshot.previous/

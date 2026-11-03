@@ -5,3 +5,5 @@ __pycache__/
 .env
 DASH_DOCS.md
 deploy.sh
+snapshot.staging/
+snapshot.previous/

@@ -272,8 +272,10 @@ def etl_dag():
     @task()
     def export_dashboard_snapshot():
         engine = PostgresHook(postgres_conn_id=CONN_ID).get_sqlalchemy_engine()
-        write_snapshot(load_from_database(engine), SNAPSHOT_DIR)
-        engine.dispose()
+        try:
+            write_snapshot(load_from_database(engine), SNAPSHOT_DIR)
+        finally:
+            engine.dispose()
 
     (
         schema_sql

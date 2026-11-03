@@ -9,7 +9,7 @@
   - callbacks.set_data hands the callbacks the dataframes behind the vocabulary and word trend pickers, so changing a picker redraws its chart from memory
   - create_app builds the app at import time, and the module exposes `server` so gunicorn can serve `app:server`. `python app.py` still runs the Dash dev server
 - Running in a container:
-  - dashboard/Dockerfile copies the snapshot into the image and serves the app with gunicorn on $PORT (default 8050), using one worker and `--preload`, since every worker holds all the data in memory
+  - dashboard/Dockerfile copies the snapshot into the image and serves the app with gunicorn on $PORT (default 8050), using one worker, since every worker would hold its own copy of the data. `--preload` loads the data before gunicorn opens the port
 - Key Tech:
   - Dash
   - gunicorn
@@ -24,7 +24,8 @@
   - The topic distinctive terms query is passed the main topics from TopicRepository, so it scores the same topics the other topic charts show
   -  Airflow mounts dashboard/ and adds it to PYTHONPATH
   - shared_words is a list, so it's saved as a one-column table and turned back into a list on read
-  - read_snapshot fails with a clear message if the snapshot is missing
+  - write_snapshot writes into snapshot.staging/ and only swaps it into place once every file is written, so a failed export leaves the previous snapshot untouched
+  - Both sides check the dataset names against SNAPSHOT_NAMES: write_snapshot refuses a mismatched set, and read_snapshot names any missing file and ignores stray ones
 - Key Tech:
   - SQLAlchemy
   - Dynaconf
@@ -55,7 +56,7 @@ python dashboard/snapshot.py   # only if the snapshot is older than the last DAG
 ```
 - `gcloud run deploy --source` builds the image with Cloud Build, pushes it to Artifact Registry and deploys a new revision
 - deploy.sh stops if there's no snapshot to ship
-- The service runs as `dashboard-runtime`, which has no roles, instead of the default compute account, which usually has Editor on the project. Whoever runs deploy.sh needs `roles/iam.serviceAccountUser` on it (project owners already have it)
+- The service runs as `dashboard-runtime`, which has no roles, instead of the shared default compute account, so roles granted to that account later never reach the public service. Whoever runs deploy.sh needs `roles/iam.serviceAccountUser` on it (project owners already have it)
 - `.gcloudignore` keeps `.env` and caches out of the upload
 - Concurrency matches the gunicorn thread count. gunicorn only listens once the data is loaded, so Cloud Run's default startup probe waits for it
 

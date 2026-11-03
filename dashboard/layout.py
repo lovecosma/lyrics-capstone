@@ -484,14 +484,12 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                                 )
                             ),
                             html.P(
-                                "The rise wasn't only due to hip-hop/rap growing in "
-                                "popularity as one might suspect given earlier "
-                                "mentioned findings of hip-hop/rap being genre "
-                                "composed of 86% songs that feature explicit content. "
-                                "Pop songs with explicit words more than doubled (16% "
-                                "to 34%), R&B's more than doubled (26% to 58%) and "
-                                "country's rose from 2% to 12%, while hip-hop, already "
-                                "at 84%, reached 93%."
+                                "The rise wasn't only due to hip-hop/rap, a genre "
+                                "where 85% of songs have explicit words, growing in "
+                                "popularity. Pop songs with explicit words more than "
+                                "doubled (16% to 34%), R&B's more than doubled (26% to "
+                                "58%) and country's rose from 2% to 12%, while hip-hop, "
+                                "already at 84%, reached 93%."
                             ),
                             build_explicit_breakdown_table(
                                 explicit_breakdown_df,

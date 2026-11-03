@@ -5,3 +5,5 @@ DASH_DOCS.md
 Dockerfile
 .dockerignore
 deploy.sh
+snapshot.staging/
+snapshot.previous/

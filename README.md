@@ -99,6 +99,8 @@ Then run it in a container:
 docker compose up -d --build dashboard
 ```
 
+The container mounts `dashboard/snapshot/`, so after a new export run `docker compose restart dashboard` instead of rebuilding.
+
 Or locally:
 
 ```bash

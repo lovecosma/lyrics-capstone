@@ -50,6 +50,14 @@ services:
     build: ./dashboard
     container_name: dashboard
     hostname: dashboard
-    restart: always
     ports:
       - 127.0.0.1:8050:8050
+    volumes:
+      # Serves the latest snapshot without a rebuild. The app loads it at startup,
+      # so restart the container after a new export
+      - type: bind
+        source: ./dashboard/snapshot
+        target: /app/snapshot
+        read_only: true
+        bind:
+          create_host_path: false
