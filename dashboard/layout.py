@@ -61,9 +61,6 @@ CORRELATION_DECIMALS = 2
 MAX_CORRELATION = 1
 SIGNIFICANCE_LEVEL = 0.05
 SIGNIFICANCE_MARKER = "*"
-HEADLINE_CELL_HALF_WIDTH = 0.5
-HEADLINE_CELL_BORDER_WIDTH = 3
-HEADLINE_CELL_BORDER_COLOR = "#111827"
 ECONOMY_HEATMAP_HEIGHT = 380
 TOPIC_HEATMAP_DECIMALS = 0
 # Emotion shares differ by fractions of a point between genres
@@ -217,10 +214,11 @@ def build_header():
         [
             html.H1("Billboard Hot 100 25 Year Rewind"),
             html.P(
-                "This application uses Billboard's year-end top 100 songs in US along with iTunes genre classification "
-                "to explore trends in popular music in the US in the past 25 years. We examine trends in genre popularity, "
-                "lyrics content, and explore whether economic health in the US influences the content of music at the "
-                "top of the charts."
+                "This application uses Billboard's year-end top 100 songs in US along "
+                "with iTunes genre classification to explore trends in popular music "
+                "in the US in the past 25 years. We examine trends in genre "
+                "popularity, lyrics content, and explore whether economic health in "
+                "the US influences the content of music at the top of the charts."
             ),
         ],
         className="page-header",
@@ -232,11 +230,13 @@ def build_genre_sheet(genre_df):
         [
             html.H2("Rising Stars: Country/Folk and Hip-Hop/Rap"),
             html.P(
-                "Each year's Billboard Year-End Hot 100 lists about 100 songs. Each song is assigned "
-                "one genre which is its primary genre from iTunes, grouped into a broad genre. A genre's "
-                "percentage for a year is the number of that year's songs in the genre divided by "
-                "the number of that year's songs with a genre. The percent change is the difference "
-                "in percentage points between the first and last periods."
+                "Each year's Billboard Year-End Hot 100 lists about 100 songs. Each "
+                "song is assigned one genre which is its primary genre from iTunes and "
+                "one broad genre which is a mapping of it's genre to 9 broad "
+                "categories. A genre's percentage for a year is the number of that "
+                "year's songs in the genre divided by the number of that year's songs "
+                "with a genre. The percent change is the difference in percentage "
+                "points between the first and last periods."
             ),
             dcc.Graph(
                 figure=build_share_chart(
@@ -244,8 +244,9 @@ def build_genre_sheet(genre_df):
                 )
             ),
             html.P(
-                "Country/Folk saw the largest increase of +13.0 points. R&B/Soul had the largest decrease of -15.6 points. "
-                "Rock/Alternative saw the next largest decrease of -10.3 points. Hip-Hop/Rap had the next largest "
+                "Country/Folk saw the largest increase of +13.0 points. R&B/Soul had "
+                "the largest decrease of -15.6 points. Rock/Alternative saw the next "
+                "largest decrease of -10.3 points. Hip-Hop/Rap had the next largest "
                 "increase of +7.3 points.",
             ),
             build_share_table(
@@ -277,10 +278,12 @@ def build_vocabulary_sheet(
                     dcc.Tab(
                         [
                             html.P(
-                                f"Every genre's most used words are the same: {', '.join(shared_words)}. "
-                                "What sets genres apart are the words below: used in at least "
-                                f"{MIN_DISTINCTIVE_SHARE}% of a genre's songs and far more often than in "
-                                f"other genres' songs. Swear words and slurs are grouped as {PROFANITY_TERM}."
+                                "Every genre's most used words are the same: "
+                                f"{', '.join(shared_words)}. What sets genres apart "
+                                "are the words below: used in at least "
+                                f"{MIN_DISTINCTIVE_SHARE}% of a genre's songs and far "
+                                "more often than in other genres' songs. Swear words "
+                                f"and slurs are grouped as {PROFANITY_TERM}."
                             ),
                             build_picker(
                                 GENRE_VOCABULARY_PICKER_ID,
@@ -300,11 +303,13 @@ def build_vocabulary_sheet(
                                 ),
                             ),
                             html.P(
-                                "Vocabulary also changed over time. Each bar is the change in the share "
-                                'of songs using a word between the first and last eight years. "Girl" '
-                                'fell from 43% of songs to 28%, "love" from 57% to 46% and "club" from '
-                                '15% to 5%. Rap slang rose: "tryna" from 11% to 21% and "lil" from 8% to '
-                                "14%. The biggest rise was strong profanity, from 35% of songs to 49%."
+                                "Vocabulary also changed over time. Each bar is the "
+                                "change in the share of songs using a word between the "
+                                'first and last eight years. "Girl" fell from 43% of '
+                                'songs to 28%, "love" from 57% to 46% and "club" from '
+                                '15% to 5%. Rap slang rose. Words like "tryna" rose '
+                                'from 11% to 21% and "lil" from 8% to 14%. The biggest '
+                                "rise was strong profanity, from 35% of songs to 49%."
                             ),
                             build_picker(
                                 GENRE_WORD_CHANGE_PICKER_ID,
@@ -326,9 +331,10 @@ def build_vocabulary_sheet(
                     dcc.Tab(
                         [
                             html.P(
-                                "Topics have their own vocabulary too. The words below are used in at "
-                                f"least {MIN_DISTINCTIVE_SHARE}% of the songs with a main topic and far "
-                                "more often than in songs with other main topics."
+                                "Topics have their own vocabulary too. The words below "
+                                f"are used in at least {MIN_DISTINCTIVE_SHARE}% of the "
+                                "songs with a main topic and far more often than in "
+                                "songs with other main topics."
                             ),
                             build_picker(
                                 TOPIC_VOCABULARY_PICKER_ID,
@@ -346,8 +352,9 @@ def build_vocabulary_sheet(
                                 ),
                             ),
                             html.P(
-                                "Each bar is the change in the share of songs with a main topic using a "
-                                "word between the first and last eight years."
+                                "Each bar is the change in the share of songs with a "
+                                "main topic using a word between the first and last "
+                                "eight years."
                             ),
                             build_picker(
                                 TOPIC_WORD_CHANGE_PICKER_ID,
@@ -371,8 +378,9 @@ def build_vocabulary_sheet(
                 content_className="sheet-tabs-content",
             ),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(BILLBOARD_SOURCE)}, "
+                f"{format_citation(APPLE_ITUNES_SOURCE)} and "
+                f"{format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
                 f"{format_citation(TYPESAFE_SOURCE)}"
             ),
         ],
@@ -402,11 +410,12 @@ def build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df):
         [
             html.H2("Love leads to Heartbreak, Money Moves In"),
             html.P(
-                "Each song's lyrics are assigned one main topic by TypeSafe's Jev model. A topic's "
-                "percentage for a year is the number of that year's songs with that main topic "
-                "divided by the number of songs on that year's chart. Most songs also touch on other "
-                "topics. A song mentions a topic when it's the main topic or when the model is at "
-                f"least {TOPIC_PRESENCE_THRESHOLD:.0%} confident the topic is present."
+                "Each song's lyrics are assigned one main topic by TypeSafe's Jev "
+                "model. A topic's percentage for a year is the number of that year's "
+                "songs with that main topic divided by the number of songs on that "
+                "year's chart. Most songs also touch on other topics. A song mentions "
+                "a topic when it's the main topic or when the model is at least "
+                f"{TOPIC_PRESENCE_THRESHOLD:.0%} confident the topic is present."
             ),
             dcc.Graph(
                 figure=build_topic_movement_chart(
@@ -417,25 +426,27 @@ def build_topic_sheet(topic_df, topic_presence_df, genre_topic_share_df):
                 ),
             ),
             html.P(
-                "Lifestyle & Success saw the largest increase of +11.3 points, more than "
-                "doubling its share from 7.2% to 18.4%. Sex & Desire had "
-                "the largest decrease of -5.1 points. Heartbreak & Loss had the next largest "
-                "increase of +4.1 points. Love & Relationships saw the next largest decrease of "
-                "-3.8 points."
+                "Lifestyle & Success saw the largest increase of +11.3 points, more "
+                "than doubling its share from 7.2% to 18.4%. Sex & Desire had the "
+                "largest decrease of -5.1 points. Heartbreak & Loss had the next "
+                "largest increase of +4.1 points. Love & Relationships saw the next "
+                "largest decrease of -3.8 points."
             ),
             build_share_table(
                 topic_df, "main_topic", "Topic", "Main topic share by period"
             ),
             html.P(
-                "Genres differ in what they sing about. Each cell compares a genre's share of songs "
-                "with a main topic against the average across all genres with that main topic. "
-                "The rise of Lifestyle & Success comes from hip-hop: it sits 26 points above the "
-                "average, and no other genre is more than 4 points above for that topic."
+                "Genres differ in what they sing about. Each cell compares a genre's "
+                "share of songs with a main topic against the average across all "
+                "genres with that main topic. The rise of Lifestyle & Success comes "
+                "from hip-hop: it sits 26 points above the average, and no other genre "
+                "is more than 4 points above for that topic."
             ),
             dcc.Graph(figure=build_genre_topic_heatmap(genre_topic_share_df, topic_df)),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(BILLBOARD_SOURCE)}, "
+                f"{format_citation(APPLE_ITUNES_SOURCE)} and "
+                f"{format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
                 f"{format_citation(TYPESAFE_SOURCE)}"
             ),
         ],
@@ -448,16 +459,17 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
         [
             html.H2("Explicit Lyrics Nearly Doubled"),
             html.P(
-                "That profanity rise was the biggest change in vocabulary. The line shows how many "
-                f"explicit words appear per {WORDS_PER_RATE:,} lyric words each year. Explicit words "
-                "are the strong profanity and slurs grouped on the vocabulary charts above. "
-                'Common filler words like "the" and "you" aren\'t counted as lyric words.'
+                "Profanity's rise was the biggest change in vocabulary. The line chart "
+                f"shows how many explicit words appear per {WORDS_PER_RATE:,} lyric "
+                "words each year. Explicit words are the strong profanity and slurs "
+                "grouped on the vocabulary charts above. Common filler words like "
+                '"the" and "you" aren\'t counted as lyric words.'
             ),
             dcc.Graph(figure=build_explicit_chart(explicit_df)),
             html.P(
-                f"Explicit words nearly doubled, from 17.2 per {WORDS_PER_RATE:,} lyric words in "
-                "2000–2007 to 33.8 in 2017–2024. They held steady through 2008–2016, then jumped in "
-                "2017."
+                f"Explicit words nearly doubled, from 17.2 per {WORDS_PER_RATE:,} "
+                "lyric words in 2000–2007 to 33.8 in 2017–2024. They held steady "
+                "through 2008–2016, then jumped in 2017."
             ),
             dcc.Tabs(
                 [
@@ -472,10 +484,14 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                                 )
                             ),
                             html.P(
-                                "The rise wasn't just hip-hop growing. Pop songs with explicit words "
-                                "more than doubled (16% to 34%), R&B's more than doubled (26% to "
-                                "58%) and country's rose from 2% to 12%, while hip-hop, already at "
-                                "84%, reached 93%."
+                                "The rise wasn't only due to hip-hop/rap growing in "
+                                "popularity as one might suspect given earlier "
+                                "mentioned findings of hip-hop/rap being genre "
+                                "composed of 86% songs that feature explicit content. "
+                                "Pop songs with explicit words more than doubled (16% "
+                                "to 34%), R&B's more than doubled (26% to 58%) and "
+                                "country's rose from 2% to 12%, while hip-hop, already "
+                                "at 84%, reached 93%."
                             ),
                             build_explicit_breakdown_table(
                                 explicit_breakdown_df,
@@ -501,10 +517,11 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                                 )
                             ),
                             html.P(
-                                "Explicit words spread beyond the topics you'd expect. Love songs "
-                                "with explicit words went from 11% to 28%, and heartbreak songs from "
-                                "20% to 35%. Songs about money and status, already 86% explicit, "
-                                "reached 96%. Party songs went the other way, from 62% to 42%."
+                                "Explicit words spread beyond the topics you'd expect. "
+                                "Love songs with explicit words went from 11% to 28%, "
+                                "and heartbreak songs from 20% to 35%. Songs about "
+                                "money and status, already 86% explicit, reached 96%. "
+                                "Party songs went the other way, from 62% to 42%."
                             ),
                             build_explicit_breakdown_table(
                                 explicit_breakdown_df,
@@ -524,8 +541,9 @@ def build_explicit_sheet(explicit_df, explicit_breakdown_df):
                 content_className="sheet-tabs-content",
             ),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
+                f"{format_citation(BILLBOARD_SOURCE)}, "
+                f"{format_citation(APPLE_ITUNES_SOURCE)} and "
+                f"{format_citation(MELO_LYRICS_SOURCE)}; topics classified with "
                 f"{format_citation(TYPESAFE_SOURCE)}; profanity list from "
                 f"{format_citation(ZABERDEV_PROFANITY_SOURCE)}"
             ),
@@ -686,11 +704,12 @@ def build_emotion_sheet(emotion_df, genre_emotion_share_df):
         [
             html.H2("Fear Rises, Joy Fades"),
             html.P(
-                "The NRC Emotion Lexicon tags about 6,800 English words with eight emotions and with "
-                "positive or negative sentiment. Each line is the percent change in the share of lyric "
-                f"words tagged with an emotion, compared with {format_period(*early_years)}. "
-                'Common filler words like "the" and "you" are left out, '
-                "and so is strong profanity, which the lexicon tags as anger and disgust."
+                "The NRC Emotion Lexicon tags about 6,800 English words with eight "
+                "emotions and with positive or negative sentiment. Each line is the "
+                "percent change in the share of lyric words tagged with an emotion, "
+                f"compared with {format_period(*early_years)}. Common filler words "
+                'like "the" and "you" are left out, and so is strong profanity, which '
+                "the lexicon tags as anger and disgust."
             ),
             dcc.Graph(
                 figure=build_emotion_chart(
@@ -702,12 +721,12 @@ def build_emotion_sheet(emotion_df, genre_emotion_share_df):
                 )
             ),
             html.P(
-                "Fear saw the largest increase, from 3.4% of lyric words in 2000–2007 to 4.3% in "
-                "2017–2024 (+0.9 points, a 25% rise). Anger had the next largest increase (+0.7 "
-                "points, up 20%). Positive words had the largest decrease (-1.1 points, down 11%), "
-                "and joy fell the most relative to where it started (-0.9 points, down 13%). "
-                "Sadness (+11%), negative words (+8%) and disgust (+7%) rose more modestly once "
-                "profanity is left out."
+                "Even with strong profanity excluded, fear still saw the largest "
+                "increase, from 3.4% of lyric words in 2000–2007 to 4.3% in 2017–2024 "
+                "(+0.9 points, a 25% rise). Anger had the next largest increase (+0.7 "
+                "points, up 20%). Positive words had the largest decrease (-1.1 "
+                "points, down 11%), and joy fell the most relative to where it started "
+                "(-0.9 points, down 13%)."
             ),
             build_share_table(
                 emotion_count_df,
@@ -718,16 +737,18 @@ def build_emotion_sheet(emotion_df, genre_emotion_share_df):
                 flat_change_points=EMOTION_FLAT_CHANGE_POINTS,
             ),
             html.P(
-                "Genres differ in emotion too. Each cell compares a genre's share of lyric words "
-                "tagged with an emotion against the average across all genres."
+                "Genres differ in emotion too. Each cell compares a genre's share of "
+                "lyric words tagged with an emotion against the average across all "
+                "genres."
             ),
             dcc.Graph(
                 figure=build_genre_emotion_heatmap(genre_emotion_share_df, emotion_df)
             ),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)}, {format_citation(APPLE_ITUNES_SOURCE)} "
-                f"and {format_citation(MELO_LYRICS_SOURCE)}; "
-                f"emotions from {format_citation(NRC_EMOTION_SOURCE)}"
+                f"{format_citation(BILLBOARD_SOURCE)}, "
+                f"{format_citation(APPLE_ITUNES_SOURCE)} and "
+                f"{format_citation(MELO_LYRICS_SOURCE)}; emotions from "
+                f"{format_citation(NRC_EMOTION_SOURCE)}"
             ),
         ],
         className="sheet",
@@ -790,20 +811,21 @@ def build_sound_sheet(sound_df):
         [
             html.H2("Shorter, Calmer, Sadder-Sounding"),
             html.P(
-                "Spotify scores each song's audio from 0 to 1 on measures like valence (how "
-                "happy or positive it sounds), energy (how intense and active it feels) and "
-                "acousticness (how much it relies on acoustic rather than electronic sound). "
-                "Each line is the yearly average over the chart entries Spotify matched. The "
-                f"charts stop at {SOUND_LAST_YEAR} because Spotify matched under 60% of later "
-                "entries; hover to see each year's match rate."
+                "Spotify scores each song's audio from 0 to 1 on measures like valence "
+                "(how happy or positive it sounds), energy (how intense and active it "
+                "feels) and acousticness (how much it relies on acoustic rather than "
+                "electronic sound). Each line is the yearly average over the chart "
+                f"entries Spotify matched. The charts stop at {SOUND_LAST_YEAR} "
+                "because Spotify matched under 60% of later entries."
             ),
             dcc.Graph(figure=build_song_length_chart(sound_df)),
             dcc.Graph(figure=build_audio_feature_chart(sound_df)),
             html.P(
-                "Hits got shorter, from 4.08 minutes on average in 2000–2007 to 3.45 minutes in "
-                "2015–2022 (-15%). They also sound sadder and calmer: valence fell from 0.58 to "
-                "0.50 (-15%) and energy from 0.70 to 0.63 (-9%), while acousticness rose from 0.15 "
-                "to 0.19 (+29%). Danceability barely moved (+3%), so hits stayed just as danceable."
+                "Hits got shorter, from 4.08 minutes on average in 2000–2007 to 3.45 "
+                "minutes in 2015–2022 (-15%). They also sound sadder and calmer. "
+                "Valence fell from 0.58 to 0.50 (-15%) and energy from 0.70 to 0.63 "
+                "(-9%), while acousticness rose from 0.15 to 0.19 (+29%). Danceability "
+                "barely moved (+3%), so hits stayed just as danceable."
             ),
             build_sound_table(sound_df),
             build_chart_note(
@@ -902,8 +924,9 @@ def build_economy_sheet(economy_df, topic_df):
         [
             html.H2("Hard Times Produced Party Songs"),
             html.P(
-                "When more Americans are out of work, more hits are mainly about partying. Each line "
-                "shows how far a year sits above or below its own 25-year average."
+                "When more Americans are out of work, more hits are mainly about "
+                "partying. Each line shows how far a year sits above or below its own "
+                "25-year average."
             ),
             dcc.Graph(
                 figure=build_unemployment_party_chart(
@@ -911,15 +934,17 @@ def build_economy_sheet(economy_df, topic_df):
                 )
             ),
             html.P(
-                "Each cell is the correlation between an indicator and a topic's yearly share. "
-                "Unemployment and party songs is the strongest of all 30 pairs. Birth rate's links "
-                "come from its steady decline, not the topics. "
+                "Each cell is the correlation between an indicator and a topic's "
+                "yearly share. Unemployment and party songs is the strongest of all 30 "
+                "pairs. Birth rate's links come from its steady decline, not the "
+                "topics. "
             ),
             dcc.Graph(figure=build_economy_correlation_heatmap(economy_df, topic_df)),
             build_chart_note(
-                f"{format_citation(BILLBOARD_SOURCE)} and {format_citation(MELO_LYRICS_SOURCE)}; "
-                f"unemployment from {format_citation(BLS_UNEMPLOYMENT_SOURCE)}, consumer sentiment "
-                f"from {format_citation(UMICH_SENTIMENT_SOURCE)} and birth rate from "
+                f"{format_citation(BILLBOARD_SOURCE)} and "
+                f"{format_citation(MELO_LYRICS_SOURCE)}; unemployment from "
+                f"{format_citation(BLS_UNEMPLOYMENT_SOURCE)}, consumer sentiment from "
+                f"{format_citation(UMICH_SENTIMENT_SOURCE)} and birth rate from "
                 f"{format_citation(WORLD_BANK_BIRTH_RATE_SOURCE)} via FRED"
             ),
         ],
@@ -1002,16 +1027,6 @@ def build_economy_correlation_heatmap(economy_df, topic_df):
             colorbar={"title": {"text": "Correlation (r)"}},
             hovertemplate="%{y} vs. %{x}<br>r = %{z:+.2f}, p = %{customdata:.3f}<extra></extra>",
         )
-    )
-    headline_column = topics.index(HEADLINE_TOPIC)
-    headline_row = ECONOMY_INDICATORS.index(UNEMPLOYMENT_INDICATOR)
-    figure.add_shape(
-        type="rect",
-        x0=headline_column - HEADLINE_CELL_HALF_WIDTH,
-        x1=headline_column + HEADLINE_CELL_HALF_WIDTH,
-        y0=headline_row - HEADLINE_CELL_HALF_WIDTH,
-        y1=headline_row + HEADLINE_CELL_HALF_WIDTH,
-        line={"color": HEADLINE_CELL_BORDER_COLOR, "width": HEADLINE_CELL_BORDER_WIDTH},
     )
     figure.update_yaxes(autorange="reversed")
     figure.update_xaxes(tickangle=-30)
