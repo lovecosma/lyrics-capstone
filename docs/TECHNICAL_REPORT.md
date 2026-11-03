@@ -4,6 +4,8 @@
 
 Find trends in the lyrics and sound of Billboard's Year-End Hot 100 from 2000 to 2024. The analysis covers genre mix, lyrical topics, vocabulary, explicit language, emotion, audio features and links to the economy.
 
+**Live dashboard:** https://dashboard-944640180596.us-east1.run.app/
+
 ## Data
 
 | Source | Provides |
@@ -18,9 +20,10 @@ Find trends in the lyrics and sound of Billboard's Year-End Hot 100 from 2000 to
 
 ## Architecture
 
-- **Pipeline:** a single Airflow DAG in Docker runs four stages: schema and views, core ETL, lyrics analysis, and genre enrichment.
+- **Pipeline:** a single Airflow DAG in Docker runs five stages: schema and views, core ETL, lyrics analysis, genre enrichment, and a dashboard snapshot export.
 - **Storage:** Postgres (Cloud SQL, through the Cloud SQL Auth Proxy) in a `billboard_lyrics` schema. SQL views shape the data for the dashboard.
 - **Dashboard:** Plotly Dash with eight sheets. Repository classes query the views, and shared helpers keep colors, periods and tables consistent across sheets.
+- **Deployment:** the dashboard runs on Cloud Run as a gunicorn container with the snapshot built into the image, so the live site needs no database and Cloud SQL can be stopped between pipeline runs. `dashboard/deploy.sh` builds it with Cloud Build and deploys a new revision.
 - **Code style:** small, task-sized processors and transformers with their I/O injected, so each step can be tested and retried on its own.
 
 ## Key techniques
@@ -29,6 +32,7 @@ Find trends in the lyrics and sound of Billboard's Year-End Hot 100 from 2000 to
 - **Lyrics NLP:** lyrics are cleaned of scrape artifacts and section headers and tokenized with nltk. Each song gets word counts, lexical diversity (MTLD) and 1–3 word n-gram counts, with stopwords and filler words filtered out.
 - **API snapshots:** iTunes and TypeSafe results are saved to CSVs. Reruns load the snapshot first and only call the APIs for tracks it doesn't cover.
 - **Versioned analysis:** lyric metrics and topics store an analysis version, so the analysis can be rerun without overwriting earlier results.
+- **Atomic snapshot export:** the export writes every Parquet file. both writing and reading check the dataset names against one list.
 - **Analysis methods:** shares are compared across three periods (2000–07, 2008–16, 2017–24). Distinctive words are ranked by lift against other groups, and economic links use Pearson correlation.
 
 ## Challenges
@@ -36,6 +40,7 @@ Find trends in the lyrics and sound of Billboard's Year-End Hot 100 from 2000 to
 - **Matching tracks across sources:** 165 entries have no iTunes match and 363 have no Spotify match, and recent years are missing more often.
 - **Cleaning lyrics:** scraped lyrics contain ads, contributor counts and section headers that would otherwise count as words.
 - **Model-made topics:** topics come from a model, not hand labels.
+- **Deploying safely:**  The deploy script exports no `.env` secrets 
 
 ## Testing
 
