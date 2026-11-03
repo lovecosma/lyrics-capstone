@@ -27,7 +27,7 @@ The dashboard has eight sheets: Genre, Topic, Vocabulary, Explicit, Emotion, Sou
 | `sql/lyrics-views.sql` | Views the dashboard queries |
 | `dashboard/` | Dash app: `app.py` (entry point), `snapshot.py` (exports the data to Parquet), `data.py` (repositories), `layout.py` (sheets and charts), `callbacks.py`, `assets/style.css` |
 | `airflow/Dockerfile` | Airflow image with the pipeline's extra packages |
-| `docker-compose.yml` | Postgres, Cloud SQL Auth Proxy (for local airflow GCP authentication), Airflow and dashboard containers |
+| `docker-compose.yml` | Cloud SQL Auth Proxy (for local airflow GCP authentication), Airflow and dashboard containers |
 | `dashboard/Dockerfile` | Dashboard image |
 | `dashboard/deploy.sh` | Deploys the dashboard to Cloud Run |
 | `tests/` | pytest specs for the transformers, analyzers and enrichers |
@@ -118,7 +118,6 @@ After the one-time setup in [dashboard/DASH_DOCS.md](dashboard/DASH_DOCS.md#depl
 
 | Service | Port |
 |---|---|
-| Local Postgres | 5434 |
 | Cloud SQL Auth Proxy | 5435 |
 | Airflow | 8080 |
 | Dashboard | 8050 |

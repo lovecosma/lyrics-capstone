@@ -232,7 +232,7 @@ def build_genre_sheet(genre_df):
             html.P(
                 "Each year's Billboard Year-End Hot 100 lists about 100 songs. Each "
                 "song is assigned one genre which is its primary genre from iTunes and "
-                "one broad genre which is a mapping of it's genre to 9 broad "
+                "one broad genre which is a mapping of its genre to 9 broad "
                 "categories. A genre's percentage for a year is the number of that "
                 "year's songs in the genre divided by the number of that year's songs "
                 "with a genre. The percent change is the difference in percentage "
