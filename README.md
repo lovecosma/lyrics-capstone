@@ -2,13 +2,13 @@
 
 What changed in the lyrics and sound of Billboard's Year-End Hot 100 from 2000 to 2024? This project loads 25 years of year-end charts and their lyrics into Postgres, enriches each song with genres, topics, emotions and audio features, and explores the trends in a Plotly Dash dashboard.
 
-The dashboard has eight sheets: Genre, Topic, Vocabulary, Explicit, Emotion, Sound, Economy and References.
-
 **Live dashboard:** https://dashboard-944640180596.us-east1.run.app/
+
+**Kaggle dataset:** https://www.kaggle.com/datasets/matthewwilliams333/billboard-hot-100-year-end-tracks-2000-2024
 
 ## How it works
 
-1. **Extract:** CSVs (Billboard lyrics, Spotify tracks, NRC Emotion Lexicon, profanity list, FRED economic series) and two APIs (iTunes Search for genres and explicit flags, TypeSafe's Jev model for lyrical topics).
+1. **Extract:** CSVs (Billboard lyrics, Spotify tracks, NRC Emotion Lexicon, profanity list, FRED economic series) and two APIs.
 2. **Transform:** pandas cleans and merges tracks, tokenizes lyrics, scores lyric metrics and n-grams, and maps iTunes genres to broad genres.
 3. **Load:** everything lands in the `billboard_lyrics` Postgres schema. SQL views shape it for the dashboard.
 4. **Orchestrate:** an Airflow DAG runs the pipeline. API results are saved to snapshot CSVs
